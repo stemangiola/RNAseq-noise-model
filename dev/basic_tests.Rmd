@@ -1,0 +1,30 @@
+---
+title: "Basic tests with simulated data"
+output: html_notebook
+---
+
+This notebook tests that the implemented models can be run on simulated data and roughly recover parameters, the tests are meant to be quick and not really rigorous 
+
+```{r setup}
+devtools::load_all()
+library(rstan)
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = TRUE)
+library(here)
+```
+
+```{r compile_models}
+model_dirichlet_multinomial = stan_model(here("stan","dirichlet_multinomial.stan"))
+
+```
+
+
+```{r}
+num_genes = 5
+sums = c(100,200,300)
+lambda_raw_prior = 2 
+data = generate_data_dirichlet_multinomial(num_genes, sums, lambda_raw_prior)
+fit = sampling(model_dirichlet_multinomial, data = data$observed)
+evaluation_summary(fit, data$true)
+```
+
