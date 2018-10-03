@@ -1,0 +1,139 @@
+---
+title: "Generated quantities"
+output: html_notebook
+---
+
+This notebook display the generated quantities of each model, with no data imput
+
+```{r}
+# Import libraries
+
+library(tidyverse)
+library(magrittr)
+library(rstan)
+library(tidybayes)
+
+```
+
+Setting data
+
+```{r}
+
+N = 100
+G = 100
+counts =  matrix(rep(1, N*G), ncol = G)
+my_prior = c(0,5)
+omit_data = 1
+exposure = 1e6
+
+```
+
+Simulate data from Multinomial model
+
+```{r}
+
+# Fit model
+multinomial_model = stan_model("stan/multinomial.stan")
+multinomial_fit = sampling(multinomial_model, cores = 4)
+
+# Check fit and plot
+multinomial_gen = 
+  multinomial_fit %>% 
+  { 
+    (.) %>% check_all_diagnostics()
+    (.)
+  } %>% 
+  gather_samples(counts_gen[N, G]) 
+
+# Plot
+multinomial_gen %>%
+  filter(.iteration== 1 & .chain == 1) %>%
+  ggplot(aes(estimate)) +
+  geom_histogram()
+
+```
+
+Simulate data from Dirichlet-multinomial model
+
+```{r}
+
+# Fit model
+dirichlet_multinomial_model = stan_model("stan/dirichlet_multinomial.stan")
+dirichlet_multinomial_fit = sampling(dirichlet_multinomial_model, cores = 4)
+
+# Check fit and plot
+dirichlet_multinomial_gen = 
+  dirichlet_multinomial_fit %>% 
+  { 
+    (.) %>% check_all_diagnostics()
+    (.)
+  } %>% 
+  gather_samples(counts_gen[N, G]) 
+
+# Plot
+dirichlet_multinomial_gen %>%
+  filter(.iteration== 1 & .chain == 1) %>%
+  ggplot(aes(estimate)) +
+  geom_histogram()
+
+
+```
+
+
+
+Simulate data from logNormal-multinomial model
+
+```{r}
+
+# Fit model
+logNormal_multinomial_model = stan_model("stan/logNormal_multinomial.stan")
+logNormal_multinomial_fit = sampling(logNormal_multinomial_model, cores = 4)
+
+# Check fit and plot
+logNormal_multinomial_gen = 
+  logNormal_multinomial_fit %>% 
+  { 
+    (.) %>% check_all_diagnostics()
+    (.)
+  } %>% 
+  gather_samples(counts_gen[N, G]) 
+
+# Plot
+logNormal_multinomial_gen %>%
+  filter(.iteration== 1 & .chain == 1) %>%
+  ggplot(aes(estimate)) +
+  geom_histogram()
+
+```
+
+```{r}
+
+# Fit model
+logStudent_multinomial_model = stan_model("stan/logStudent_multinomial.stan")
+logStudent_multinomial_fit = sampling(logStudent_multinomial_model, cores = 4)
+
+# Check fit and plot
+logStudent_multinomial_gen = 
+  logStudent_multinomial_fit %>% 
+  { 
+    (.) %>% check_all_diagnostics()
+    (.)
+  } %>% 
+  gather_samples(counts_gen[N, G]) 
+
+# Plot
+logStudent_multinomial_gen %>%
+  filter(.iteration== 1 & .chain == 1) %>%
+  ggplot(aes(estimate)) +
+  geom_histogram()
+```
+
+
+```{r}
+
+mcmc_pairs(logStudent_multinomial_fit, pars = c("alpha[1]", "lambda[1]", "sigma"), off_diag_args = list(size = 1.5))
+
+pairs(logStudent_multinomial_fit, pars = c("alpha[1]", "lambda[1]", "sigma"))
+```
+
+
