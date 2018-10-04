@@ -28,6 +28,32 @@ exposure = 1e6
 
 ```
 
+Simulate data from Negative Binomial model
+
+```{r}
+
+# Fit model
+negBinomial_model = stan_model("stan/negBinomial.stan")
+negBinomial_fit = sampling(negBinomial_model, cores = 4)
+
+# Check fit and plot
+negBinomial_gen = 
+  negBinomial_fit %>% 
+  { 
+    (.) %>% check_all_diagnostics()
+    (.)
+  } %>% 
+  gather_samples(counts_gen[N, G]) 
+
+# Plot
+negBinomial_gen %>%
+  filter(.iteration== 1 & .chain == 1) %>%
+  ggplot(aes(estimate)) +
+  geom_histogram() +
+  scale_x_log10()
+
+```
+
 Simulate data from Multinomial model
 
 ```{r}
