@@ -5,14 +5,19 @@ output: html_notebook
 
 This notebook display the generated quantities of each model, with no data imput
 
-```{r}
+```{r setup}
 # Import libraries
 
 library(tidyverse)
 library(magrittr)
 library(rstan)
 library(tidybayes)
-setwd("~/PostDoc/RNAseq-noise-model")
+library(here)
+
+rstan_options(auto_write = TRUE)
+options(mc.cores = parallel::detectCores())
+
+devtools::load_all()
 ```
 
 Setting data
@@ -33,7 +38,7 @@ Simulate data from Negative Binomial model
 ```{r}
 
 # Fit model
-negBinomial_model = stan_model("stan/negBinomial.stan")
+negBinomial_model = stan_model(here("stan","negBinomial.stan"))
 negBinomial_fit = sampling(negBinomial_model, cores = 4)
 
 # Check fit and plot
@@ -59,7 +64,7 @@ Simulate data from Multinomial model
 ```{r}
 
 # Fit model
-multinomial_model = stan_model("stan/multinomial.stan")
+multinomial_model = stan_model(here("stan","multinomial.stan"))
 multinomial_fit = sampling(multinomial_model, cores = 4)
 
 # Check fit and plot
@@ -85,7 +90,7 @@ Simulate data from Dirichlet-multinomial model
 ```{r}
 
 # Fit model
-dirichlet_multinomial_model = stan_model("stan/dirichlet_multinomial.stan")
+dirichlet_multinomial_model = stan_model(here("stan","dirichlet_multinomial.stan"))
 dirichlet_multinomial_fit = sampling(dirichlet_multinomial_model, cores = 4)
 
 # Check fit and plot
@@ -114,7 +119,7 @@ Simulate data from logNormal-multinomial model
 ```{r}
 
 # Fit model
-logNormal_multinomial_model = stan_model("stan/logNormal_multinomial.stan")
+logNormal_multinomial_model = stan_model(here("stan","logNormal_multinomial.stan"))
 logNormal_multinomial_fit = sampling(logNormal_multinomial_model, cores = 4)
 
 # Check fit and plot
@@ -138,7 +143,7 @@ logNormal_multinomial_gen %>%
 ```{r}
 
 # Fit model
-logStudent_multinomial_model = stan_model("stan/logStudent_multinomial.stan")
+logStudent_multinomial_model = stan_model(here("stan","logStudent_multinomial.stan"))
 logStudent_multinomial_fit = sampling(logStudent_multinomial_model, cores = 4)
 
 # Check fit and plot
