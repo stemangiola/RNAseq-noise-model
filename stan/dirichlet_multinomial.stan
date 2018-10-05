@@ -1,18 +1,16 @@
 functions {
+
   real dirichlet_multinomial_lpmf(int[] y, vector alpha) {
     	real alpha_plus = sum(alpha);
 
       return lgamma(alpha_plus) + sum(lgamma(alpha + to_vector(y)))
                   - lgamma(alpha_plus+sum(y)) - sum(lgamma(alpha));
   }
-	 	int[] dirichlet_multinomial_rng(vector alpha, int exposure) {
+
+	int[] dirichlet_multinomial_rng(vector alpha, int exposure) {
 	    return multinomial_rng(dirichlet_rng(alpha), exposure);
-	  }
-
+	}
 }
-
-
-
 
 data {
   int<lower=0> N;
@@ -20,36 +18,50 @@ data {
   int<lower=0> counts[N,G];
   real my_prior[2];
   int<lower=0, upper=1> omit_data;
-  int<lower=0> exposure;
+  int<lower=0> exposure[N];
 
 }
 
 parameters {
 
-  vector[G] lambda;
+  // Overall properties of the data
+  real lambda_mu;
+  real<lower=0> lambda_sigma;
   real<lower=1> sigma_raw;
+
+  // Gene-wise properties of the data
+  vector[G] lambda;
 }
 transformed parameters{
-  simplex[G] lambda_softmax = softmax(lambda);
 
   // Constrain the dirichlet parameter to give unimodal distribution
   real<lower=1> sigma = sigma_raw / min(softmax(lambda));
 }
 model {
 
-  sum(lambda) ~ normal(0,0.01 * G);
-  lambda ~ normal(my_prior[1], my_prior[2]);
+  // Overall properties of the data
+  lambda_mu ~ normal(0,1);
+  lambda_sigma ~ cauchy(0,2);
   sigma_raw ~ gamma(3, 2);
 
+  // Gene-wise properties of the data
+  sum(lambda) ~ normal(0,0.01 * G);
+  lambda ~ normal(lambda_mu, lambda_sigma);
+
   // Sample from data
-  if(omit_data==0) for(n in 1:N) counts[n,] ~ multinomial(sigma * lambda_softmax);
+  if(omit_data==0) for(n in 1:N) counts[n,] ~ dirichlet_multinomial(sigma * softmax(lambda));
 
 }
 generated quantities{
   int<lower=0> counts_gen[N,G];
+  vector[G] lambda_gen;
 
+  // Sample gene wise rates
+  for(g in 1:G) lambda_gen[g] = normal_rng(lambda_mu, lambda_sigma);
+
+  // Sample gene wise sample wise abundances
   for(n in 1:N) {
-    counts_gen[n,] = dirichlet_multinomial_rng(sigma * lambda_softmax, exposure);
+    counts_gen[n,] = dirichlet_multinomial_rng(sigma * softmax(lambda_gen), exposure[n]);
   }
 
 }
