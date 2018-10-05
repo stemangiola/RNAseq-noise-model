@@ -12,14 +12,17 @@ parameters {
 
   vector[G] lambda;
   real<lower=1> sigma;
+  real exposure_rate[N];
 }
 model {
 
   lambda ~ normal(my_prior[1], my_prior[2]);
   sigma ~ gamma(2,3);
+  exposure_rate ~ normal(0,1);
+  sum(exposure_rate) ~ normal(0, 0.01 * N);
 
   // Sample from data
-  if(omit_data==0) for(n in 1:N) counts[n,] ~ neg_binomial_2_log(lambda, sigma);
+  if(omit_data==0) for(n in 1:N) counts[n,] ~ neg_binomial_2_log(exposure_rate[n] + lambda, sigma);
 
 }
 generated quantities{
@@ -27,6 +30,7 @@ generated quantities{
 
   for(n in 1:N) for(g in 1:G) {
     counts_gen[n,g] = neg_binomial_2_log_rng(lambda[g], sigma);
+    counts_gen[n,g] = neg_binomial_2_log_rng(exposure_rate[n] + lambda_gen[g], sigma);
   }
 
 
