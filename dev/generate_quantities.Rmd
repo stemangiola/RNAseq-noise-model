@@ -105,11 +105,13 @@ logStudent_multinomial_model = stan_model(here("stan","logStudent_multinomial.st
 Run all models
 
 ```{r}
+
 negBinomial_fit = sampling_check_return(negBinomial_model)
 multinomial_fit = sampling_check_return(multinomial_model) 
 dirichlet_multinomial_fit = sampling_check_return(dirichlet_multinomial_model) 
-logNormal_multinomial_fit = sampling_check_return(logNormal_multinomial_models) 
+logNormal_multinomial_fit = sampling_check_return(logNormal_multinomial_model) 
 logStudent_multinomial_fit = sampling_check_return(logStudent_multinomial_model) 
+
 ```
 
 Simulate data from Negative Binomial model
