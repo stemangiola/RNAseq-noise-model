@@ -27,22 +27,17 @@ parameters {
   // Overall properties of the data
   real lambda_mu;
   real<lower=0> lambda_sigma;
-  real<lower=1> sigma_raw;
+  real<lower=0> sigma;
 
   // Gene-wise properties of the data
   vector[G] lambda;
-}
-transformed parameters{
-
-  // Constrain the dirichlet parameter to give unimodal distribution
-  real<lower=1> sigma = sigma_raw / min(softmax(lambda));
 }
 model {
 
   // Overall properties of the data
   lambda_mu ~ normal(0,1);
   lambda_sigma ~ cauchy(0,2);
-  sigma_raw ~ gamma(3, 2);
+  sigma ~ gamma(3,2);
 
   // Gene-wise properties of the data
   sum(lambda) ~ normal(0,0.01 * G);
