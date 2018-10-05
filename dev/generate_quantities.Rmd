@@ -6,8 +6,10 @@ output: html_notebook
 This notebook display the generated quantities of each model, with no data imput
 
 ```{r}
-# Import libraries
 
+set.seed(13254)
+
+# Import libraries
 library(tidyverse)
 library(magrittr)
 library(rstan)
@@ -19,12 +21,25 @@ Setting data
 
 ```{r}
 
-N = 100
-G = 100
-counts =  matrix(rep(1, N*G), ncol = G)
+# Import gene transcription data set
+counts_tidy = 
+  read_csv("data/tibble_TCGA_files/Acute_Myeloid_Leukemia_Primary_Blood_Derived_Cancer_-_Peripheral_Blood.csv") %>%
+  mutate_if(is.character, as.factor) %>%
+  filter(sample %in% ( (.) %>% distinct(sample) %>% head(n=50) %>% pull(sample)) ) %>%
+  filter(ens_iso %in% ( (.) %>% distinct(ens_iso) %>% head(n=100) %>% pull(ens_iso)) ) 
+counts = 
+  counts_tidy %>% 
+  select(ens_iso,`read count`,sample) %>% 
+  spread(ens_iso, `read count`) %>% 
+  select(-sample) %>% 
+  as.matrix()
+  
+# Info on data set
+N = counts_tidy %>% distinct(sample) %>% nrow
+G = counts_tidy %>% distinct(ens_iso) %>% nrow
 my_prior = c(0,5)
-omit_data = 1
-exposure = 1e6
+omit_data = 0
+exposure = counts_tidy %>% group_by(sample) %>% summarise(`Total counts` = sum(`read count`)) %>% pull(`Total counts`)
 
 ```
 
@@ -60,7 +75,7 @@ Simulate data from Multinomial model
 
 # Fit model
 multinomial_model = stan_model("stan/multinomial.stan")
-multinomial_fit = sampling(multinomial_model, cores = 4)
+multinomial_fit = sampling(multinomial_model, cores = 4, iter = iterations)
 
 # Check fit and plot
 multinomial_gen = 
@@ -106,8 +121,6 @@ dirichlet_multinomial_gen  %>%
 
 
 ```
-
-
 
 Simulate data from logNormal-multinomial model
 
