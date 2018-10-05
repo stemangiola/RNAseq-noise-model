@@ -5,7 +5,8 @@ output: html_notebook
 
 This notebook display the generated quantities of each model, with no data imput
 
-```{r}
+```{r setup}
+# Import libraries
 
 set.seed(13254)
 
@@ -14,7 +15,12 @@ library(tidyverse)
 library(magrittr)
 library(rstan)
 library(tidybayes)
-setwd("~/PostDoc/RNAseq-noise-model")
+library(here)
+
+rstan_options(auto_write = TRUE)
+options(mc.cores = parallel::detectCores())
+
+devtools::load_all()
 ```
 
 Setting global variables
@@ -22,18 +28,18 @@ Setting global variables
 ```{r}
 
 # Import gene transcription data set
-counts_tidy = 
+counts_tidy =
   read_csv("data/tibble_TCGA_files/Acute_Myeloid_Leukemia_Primary_Blood_Derived_Cancer_-_Peripheral_Blood.csv") %>%
   mutate_if(is.character, as.factor) %>%
   filter(sample %in% ( (.) %>% distinct(sample) %>% head(n=50) %>% pull(sample)) ) %>%
-  filter(ens_iso %in% ( (.) %>% distinct(ens_iso) %>% head(n=100) %>% pull(ens_iso)) ) 
-counts = 
-  counts_tidy %>% 
-  select(ens_iso,`read count`,sample) %>% 
-  spread(ens_iso, `read count`) %>% 
-  select(-sample) %>% 
+  filter(ens_iso %in% ( (.) %>% distinct(ens_iso) %>% head(n=100) %>% pull(ens_iso)) )
+counts =
+  counts_tidy %>%
+  select(ens_iso,`read count`,sample) %>%
+  spread(ens_iso, `read count`) %>%
+  select(-sample) %>%
   as.matrix()
-  
+
 # Info on data set
 N = counts_tidy %>% distinct(sample) %>% nrow
 G = counts_tidy %>% distinct(ens_iso) %>% nrow
@@ -53,7 +59,7 @@ Plottig functions
 my_theme = 	
 	theme_bw() +
 	theme(
-		panel.border = element_blank(), 
+		panel.border = element_blank(),
 		axis.line = element_line(),
 		panel.grid.major = element_line(size = 0.2),
 		panel.grid.minor = element_line(size = 0.1),
@@ -74,17 +80,17 @@ Simulate data from Negative Binomial model
 ```{r}
 
 # Fit model
-negBinomial_model = stan_model("stan/negBinomial.stan")
+negBinomial_model = stan_model(here("stan","negBinomial.stan"))
 negBinomial_fit = sampling(negBinomial_model, cores = 4, iter = iterations)
 
 # Check fit and plot
-negBinomial_gen = 
-  negBinomial_fit %>% 
-  { 
+negBinomial_gen =
+  negBinomial_fit %>%
+  {
     (.) %>% check_all_diagnostics()
     (.)
-  } %>% 
-  gather_samples(counts_gen[N, G]) 
+  } %>%
+  gather_samples(counts_gen[N, G])
 
 # Plot
 negBinomial_gen %>%
@@ -101,17 +107,17 @@ Simulate data from Multinomial model
 ```{r}
 
 # Fit model
-multinomial_model = stan_model("stan/multinomial.stan")
+multinomial_model = stan_model(here("stan","multinomial.stan"))
 multinomial_fit = sampling(multinomial_model, cores = 4, iter = iterations)
 
 # Check fit and plot
-multinomial_gen = 
-  multinomial_fit %>% 
-  { 
+multinomial_gen =
+  multinomial_fit %>%
+  {
     (.) %>% check_all_diagnostics()
     (.)
-  } %>% 
-  gather_samples(counts_gen[N, G]) 
+  } %>%
+  gather_samples(counts_gen[N, G])
 
 # Plot
 multinomial_gen %>%
@@ -128,17 +134,17 @@ Simulate data from Dirichlet-multinomial model
 ```{r}
 
 # Fit model
-dirichlet_multinomial_model = stan_model("stan/dirichlet_multinomial.stan")
+dirichlet_multinomial_model = stan_model(here("stan","dirichlet_multinomial.stan"))
 dirichlet_multinomial_fit = sampling(dirichlet_multinomial_model, cores = 4, iter = iterations)
 
 # Check fit and plot
-dirichlet_multinomial_gen = 
-  dirichlet_multinomial_fit %>% 
-  { 
+dirichlet_multinomial_gen =
+  dirichlet_multinomial_fit %>%
+  {
     (.) %>% check_all_diagnostics()
     (.)
-  } %>% 
-  gather_samples(counts_gen[N, G]) 
+  } %>%
+  gather_samples(counts_gen[N, G])
 
 # Plot
 dirichlet_multinomial_gen  %>%
@@ -156,17 +162,17 @@ Simulate data from logNormal-multinomial model
 ```{r}
 
 # Fit model
-logNormal_multinomial_model = stan_model("stan/logNormal_multinomial.stan")
+logNormal_multinomial_model = stan_model(here("stan","logNormal_multinomial.stan"))
 logNormal_multinomial_fit = sampling(logNormal_multinomial_model, cores = 4, iter = iterations)
 
 # Check fit and plot
-logNormal_multinomial_gen = 
-  logNormal_multinomial_fit %>% 
-  { 
+logNormal_multinomial_gen =
+  logNormal_multinomial_fit %>%
+  {
     (.) %>% check_all_diagnostics()
     (.)
-  } %>% 
-  gather_samples(counts_gen[N, G]) 
+  } %>%
+  gather_samples(counts_gen[N, G])
 
 # Plot
 logNormal_multinomial_gen %>%
@@ -181,17 +187,17 @@ logNormal_multinomial_gen %>%
 ```{r}
 
 # Fit model
-logStudent_multinomial_model = stan_model("stan/logStudent_multinomial.stan")
+logStudent_multinomial_model = stan_model(here("stan","logStudent_multinomial.stan"))
 logStudent_multinomial_fit = sampling(logStudent_multinomial_model, cores = 4, iter = iterations)
 
 # Check fit and plot
-logStudent_multinomial_gen = 
-  logStudent_multinomial_fit %>% 
-  { 
+logStudent_multinomial_gen =
+  logStudent_multinomial_fit %>%
+  {
     (.) %>% check_all_diagnostics()
     (.)
-  } %>% 
-  gather_samples(counts_gen[N, G]) 
+  } %>%
+  gather_samples(counts_gen[N, G])
 
 # Plot
 logStudent_multinomial_gen %>%
@@ -209,5 +215,3 @@ mcmc_pairs(logStudent_multinomial_fit, pars = c("alpha[1]", "lambda[1]", "sigma"
 
 pairs(logStudent_multinomial_fit, pars = c("alpha[1]", "lambda[1]", "sigma"))
 ```
-
-
