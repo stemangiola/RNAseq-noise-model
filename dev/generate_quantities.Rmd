@@ -60,8 +60,8 @@ check_return = function(fit){
   fit
 }
 
-sampling_check_return = function(model, cores = 4, iter = 500){
-  sampling(model, cores = cores, iter = iter) %>% check_return
+sampling_check_return = function(model, cores = 4, iter = 500, ...){
+  sampling(model, cores = cores, iter = iter, ...) %>% check_return
 }
 
 ```
@@ -109,8 +109,8 @@ Run all models
 negBinomial_fit = sampling_check_return(negBinomial_model)
 multinomial_fit = sampling_check_return(multinomial_model) 
 dirichlet_multinomial_fit = sampling_check_return(dirichlet_multinomial_model) 
-logNormal_multinomial_fit = sampling_check_return(logNormal_multinomial_model) 
-logStudent_multinomial_fit = sampling_check_return(logStudent_multinomial_model) 
+logNormal_multinomial_fit = sampling_check_return(logNormal_multinomial_model, control =list(max_treedepth =12)) 
+logStudent_multinomial_fit = sampling_check_return(logStudent_multinomial_model, control =list(max_treedepth =12)) 
 
 ```
 
