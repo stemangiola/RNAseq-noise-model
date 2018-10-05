@@ -40,3 +40,4 @@ rsconnect/
 
 # data directory
 data/*
+*.rds
