@@ -61,7 +61,7 @@ check_return = function(fit){
 }
 
 sampling_check_return = function(model, cores = 4, iter = 500){
-  sampling(model, cores = cores, iter = iter) %>% check_and_return
+  sampling(model, cores = cores, iter = iter) %>% check_return
 }
 
 ```
