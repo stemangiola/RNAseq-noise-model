@@ -29,7 +29,7 @@ Setting global variables
 
 # Import gene transcription data set
 counts_tidy =
-  read_csv("data/tibble_TCGA_files/Acute_Myeloid_Leukemia_Primary_Blood_Derived_Cancer_-_Peripheral_Blood.csv") %>%
+  read_csv(here("data", "tibble_TCGA_files/Acute_Myeloid_Leukemia_Primary_Blood_Derived_Cancer_-_Peripheral_Blood.csv")) %>%
   mutate_if(is.character, as.factor) %>%
   filter(sample %in% ( (.) %>% distinct(sample) %>% head(n=50) %>% pull(sample)) ) %>%
   filter(ens_iso %in% ( (.) %>% distinct(ens_iso) %>% head(n=100) %>% pull(ens_iso)) )
