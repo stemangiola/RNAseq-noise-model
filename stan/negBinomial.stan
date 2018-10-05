@@ -12,12 +12,17 @@ parameters {
 
   vector[G] lambda;
   real<lower=1> sigma;
+  real<lower=0> sigma_raw;
   real exposure_rate[N];
+}
+transformed parameters {
+  real sigma = 1/sqrt(sigma_raw);
 }
 model {
 
   lambda ~ normal(my_prior[1], my_prior[2]);
   sigma ~ gamma(2,3);
+  sigma_raw ~ normal(0,1);
   exposure_rate ~ normal(0,1);
   sum(exposure_rate) ~ normal(0, 0.01 * N);
 
