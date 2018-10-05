@@ -17,7 +17,7 @@ library(tidybayes)
 setwd("~/PostDoc/RNAseq-noise-model")
 ```
 
-Setting data
+Setting global variables
 
 ```{r}
 
@@ -41,6 +41,8 @@ my_prior = c(0,5)
 omit_data = 0
 exposure = counts_tidy %>% group_by(sample) %>% summarise(`Total counts` = sum(`read count`)) %>% pull(`Total counts`)
 
+# Setting sampling options
+iterations = 500
 ```
 
 Simulate data from Negative Binomial model
@@ -49,7 +51,7 @@ Simulate data from Negative Binomial model
 
 # Fit model
 negBinomial_model = stan_model("stan/negBinomial.stan")
-negBinomial_fit = sampling(negBinomial_model, cores = 4)
+negBinomial_fit = sampling(negBinomial_model, cores = 4, iter = iterations)
 
 # Check fit and plot
 negBinomial_gen = 
@@ -101,7 +103,7 @@ Simulate data from Dirichlet-multinomial model
 
 # Fit model
 dirichlet_multinomial_model = stan_model("stan/dirichlet_multinomial.stan")
-dirichlet_multinomial_fit = sampling(dirichlet_multinomial_model, cores = 4)
+dirichlet_multinomial_fit = sampling(dirichlet_multinomial_model, cores = 4, iter = iterations)
 
 # Check fit and plot
 dirichlet_multinomial_gen = 
@@ -128,7 +130,7 @@ Simulate data from logNormal-multinomial model
 
 # Fit model
 logNormal_multinomial_model = stan_model("stan/logNormal_multinomial.stan")
-logNormal_multinomial_fit = sampling(logNormal_multinomial_model, cores = 4)
+logNormal_multinomial_fit = sampling(logNormal_multinomial_model, cores = 4, iter = iterations)
 
 # Check fit and plot
 logNormal_multinomial_gen = 
@@ -152,7 +154,7 @@ logNormal_multinomial_gen %>%
 
 # Fit model
 logStudent_multinomial_model = stan_model("stan/logStudent_multinomial.stan")
-logStudent_multinomial_fit = sampling(logStudent_multinomial_model, cores = 4)
+logStudent_multinomial_fit = sampling(logStudent_multinomial_model, cores = 4, iter = iterations)
 
 # Check fit and plot
 logStudent_multinomial_gen = 
