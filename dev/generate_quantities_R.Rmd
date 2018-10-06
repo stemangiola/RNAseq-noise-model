@@ -1,0 +1,63 @@
+---
+title: "Generated quantities - R simulators"
+output: html_notebook
+---
+
+```{r setup}
+library(tidyverse)
+library(cowplot)
+devtools::load_all()
+
+n_plots_per_model = 10
+N = 10
+G = 1000
+avg_reads_per_gene = 200
+```
+
+```{r}
+plot_simulator_result = function(sim_result) {
+  sim_result$observed$counts %>% as.integer() %>% data.frame(counts = . + 0.5) %>%
+    ggplot(aes(counts)) + geom_histogram(bins = 30) + scale_x_log10()
+}
+```
+
+
+## Dirichlet multinomial 
+
+This is a different version, as captured in `stan/dirichlet_multinomial_base.stan` 
+
+```{r}
+
+
+for(i in 1:n_plots_per_model) {
+  generate_data_dirichlet_multinomial_base(G, sums = rep(avg_reads_per_gene * G, length.out = N), lambda_raw_prior = 2.5,
+                                      alpha_prior_log_mean = log(2 * avg_reads_per_gene * G)) %>%
+    plot_simulator_result() %>% print()
+}
+
+```
+
+## NB multinomial
+
+```{r}
+for(i in 1:n_plots_per_model) {
+  data <- generate_data_nb_multinomial(G, sums = rep(avg_reads_per_gene * G, length.out = N), lambda_raw_prior = 2.5) 
+  data %>% plot_simulator_result() %>% print()
+}
+
+```
+
+```{r}
+n_samples <- 10000
+n_dim <- 10
+cc <- matrix(Inf, n_samples, n_dim)
+for(i in 1:n_samples) {
+  cc[i,] = rnorm_sum_to_zero(n_dim)
+}
+
+hist(rowSums(cc))
+colMeans(cc)
+diag(cov(cc))
+
+```
+
