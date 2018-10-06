@@ -128,7 +128,7 @@ stan_checkdivergences <- function(sf,nupars = 'all'){
 	samplerps <- get_sampler_params(sf)
 	skeleton <- get_inits(sf)[[1L]]
 	if('all' %in% nupars) nupars <- get_num_upars(sf)
-	e <- extract(sf)
+	e <- rstan::extract(sf)
 	ea <- as.array(sf) #[,,1:nupars]
 
 	ucsnames <- dimnames(ea)$parameters[1:nupars]
@@ -260,10 +260,10 @@ check_energy <- function(fit) {
 
 # Checks the effective sample size per iteration
 check_n_eff <- function(fit) {
-	fit_summary <- summary(fit, probs = c(0.5))$summary
+  fit_summary <- rstan::summary(fit, probs = c(0.5))$summary
 	N <- dim(fit_summary)[[1]]
 
-	iter <- dim(extract(fit)[[1]])[[1]]
+	iter <- dim(rstan::extract(fit)[[1]])[[1]]
 
 	no_warning <- TRUE
 	for (n in 1:N) {
@@ -282,7 +282,7 @@ check_n_eff <- function(fit) {
 
 # Checks the potential scale reduction factors
 check_rhat <- function(fit) {
-	fit_summary <- summary(fit, probs = c(0.5))$summary
+	fit_summary <- rstan::summary(fit, probs = c(0.5))$summary
 	N <- dim(fit_summary)[[1]]
 
 	no_warning <- TRUE
@@ -310,7 +310,7 @@ check_all_diagnostics <- function(fit) {
 
 # Returns parameter arrays separated into divergent and non-divergent transitions
 partition_div <- function(fit) {
-	nom_params <- extract(fit, permuted=FALSE)
+	nom_params <- rstan::extract(fit, permuted=FALSE)
 	n_chains <- dim(nom_params)[2]
 	params <- as.data.frame(do.call(rbind, lapply(1:n_chains, function(n) nom_params[,n,])))
 
