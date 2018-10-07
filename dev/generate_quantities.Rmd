@@ -146,11 +146,10 @@ Simulate data from Negative Binomial model
 # Check fit and plot
 negBinomial_gen =
   negBinomial_fit %>%
-  {
-    (.) %>% check_all_diagnostics()
-    (.)
-  } %>%
-  gather_samples(counts_gen[N, G])
+  gather_samples(counts_gen[N, G]) %>%
+  left_join(
+    tibble(N = 1:( counts_tidy %>% pull(sample) %>% levels %>% length ))
+  )
 
 # Plot
 negBinomial_gen %>%
@@ -171,10 +170,6 @@ Simulate data from Multinomial model
 # Check fit and plot
 multinomial_gen =
   multinomial_fit %>%
-  {
-    (.) %>% check_all_diagnostics()
-    (.)
-  } %>%
   gather_samples(counts_gen[N, G])
 
 # Plot
@@ -196,10 +191,6 @@ Simulate data from Dirichlet-multinomial model
 # Check fit and plot
 dirichlet_multinomial_gen =
   dirichlet_multinomial_fit %>%
-  {
-    (.) %>% check_all_diagnostics()
-    (.)
-  } %>%
   gather_samples(counts_gen[N, G])
 
 # Plot
@@ -222,10 +213,6 @@ Simulate data from logNormal-multinomial model
 # Check fit and plot
 logNormal_multinomial_gen =
   logNormal_multinomial_fit %>%
-  {
-    (.) %>% check_all_diagnostics()
-    (.)
-  } %>%
   gather_samples(counts_gen[N, G])
 
 # Plot
@@ -245,10 +232,6 @@ logNormal_multinomial_gen %>%
 # Check fit and plot
 logStudent_multinomial_gen =
   logStudent_multinomial_fit %>%
-  {
-    (.) %>% check_all_diagnostics()
-    (.)
-  } %>%
   gather_samples(counts_gen[N, G])
 
 # Plot
@@ -261,9 +244,3 @@ logStudent_multinomial_gen %>%
 ```
 
 
-```{r}
-
-mcmc_pairs(logStudent_multinomial_fit, pars = c("alpha[1]", "lambda[1]", "sigma"), off_diag_args = list(size = 1.5))
-
-pairs(logStudent_multinomial_fit, pars = c("alpha[1]", "lambda[1]", "sigma"))
-```
