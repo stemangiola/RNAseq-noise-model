@@ -74,11 +74,10 @@ if(recompute_counts_tidy) {
   counts_data = list(N = N, G = G, counts_tidy = counts_tidy)
   saveRDS(counts_data, file = temp_file_counts)
 }
-# Produce input for Stan
-
 ```
 
 ```{r}
+# Produce input for Stan
 data_for_stan = list(
   N = N, 
   G = G,
@@ -96,7 +95,8 @@ data_for_stan = list(
     counts_tidy %>% 
     group_by(sample) %>% 
     summarise(`Total counts` = sum(`read count`)) %>% 
-    pull(`Total counts`)
+    pull(`Total counts`),
+  use_lambda_mu = 1
 )
 ```
 
