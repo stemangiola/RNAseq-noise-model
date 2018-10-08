@@ -57,23 +57,31 @@ counts_tidy =
   )
 
 # Produce input for Stan
-counts =
-  counts_tidy %>%
-  select(ens_iso,`read count`,sample) %>%
-  spread(ens_iso, `read count`) %>%
-  select(-sample) %>%
-  as.matrix()
-
-# Info on data set
-my_prior = c(0,5)
-omit_data = 0
-exposure = 
-  counts_tidy %>% 
-  group_by(sample) %>% 
-  summarise(`Total counts` = sum(`read count`)) %>% 
-  pull(`Total counts`)
 
 ```
+
+```{r}
+data_for_stan = list(
+  N = N, 
+  G = G,
+  counts =
+    counts_tidy %>%
+    select(ens_iso,`read count`,sample) %>%
+    spread(ens_iso, `read count`) %>%
+    select(-sample) %>%
+    as.matrix(),
+  
+  # Info on data set
+  my_prior = c(0,5),
+  omit_data = 0,
+  exposure = 
+    counts_tidy %>% 
+    group_by(sample) %>% 
+    summarise(`Total counts` = sum(`read count`)) %>% 
+    pull(`Total counts`)
+)
+```
+
 Wrappers
 
 ```{r}
@@ -148,6 +156,7 @@ fits =
   foreach(model = models, model_name = models %>% names) %do% {
     sampling_check_return(
       model, 
+      data = data_for_stan,
       control = list(
         max_treedepth = switch(
           model_name, 
