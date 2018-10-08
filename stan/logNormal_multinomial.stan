@@ -41,17 +41,21 @@ model {
 
 }
 generated quantities{
-  int<lower=0> counts_gen[N,G];
+  int<lower=0> counts_gen_naive[N,G];
+  int<lower=0> counts_gen_geneWise[N,G];
   vector[G] lambda_gen;
-  vector[G] theta_gen[N];
+  vector[G] theta_gen_naive[N];
+  vector[G] theta_gen_geneWise[N];
 
   // Sample gene wise rates
   for(g in 1:G) lambda_gen[g] = normal_rng(lambda_mu, lambda_sigma);
-  for(n in 1:N) for(g in 1:G) theta_gen[n,g] = normal_rng(lambda_gen[g],sigma);
+  for(n in 1:N) for(g in 1:G) theta_gen_naive[n,g] = normal_rng(lambda_gen[g],sigma);
+  for(n in 1:N) for(g in 1:G) theta_gen_geneWise[n,g] = normal_rng(lambda[g],sigma);
 
   // Sample gene wise sample wise abundances
   for(n in 1:N) {
-    counts_gen[n,] = multinomial_rng(softmax(theta_gen[n]), exposure[n]);
+    counts_gen_naive[n,] = multinomial_rng(softmax(theta_gen_naive[n]), exposure[n]);
+    counts_gen_geneWise[n,] = multinomial_rng(softmax(theta_gen_geneWise[n]), exposure[n]);
   }
 
 }

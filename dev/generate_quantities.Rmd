@@ -111,29 +111,6 @@ my_theme =
 	)
 
 
-plot_generated_quantities = function(gq){
-  
-  list(
-    
-    gq %>%
-    filter(.iteration %in% 1:10 & .chain == 1) %>%
-    ggplot(aes(`Read count`+1, color=.iteration)) +
-  	stat_bin(geom = "step", position = "identity", bins=50) +
-  	scale_x_log10() + 
-  	my_theme +
-    ggtitle("Iterations 1 to 10 grouped"),
-    
-    gq %>%
-    filter(.iteration %in% 1:10 & .chain == 1) %>%
-    ggplot(aes(`Read count`+1, color=.iteration)) +
-  	stat_bin(geom = "step", position = "identity", bins=50) +
-  	scale_x_log10() + 
-  	my_theme +
-    ggtitle("Iterations 1 to 10 together (roughly as if we had 1000 genes)")
-  ) %>%
-  cowplot::plot_grid(plotlist = ., align = "v",  axis="b", rel_widths = 1 )
-  
-}
 ```
 
 Set model names
@@ -142,7 +119,13 @@ Set model names
 # model_names = 
 #   dir(path = here("stan"), pattern = ".stan") %>%
 #   gsub("\\.stan", "", .)
-model_names = c("negBinomial", "multinomial", "dirichlet_multinomial", "logNormal_multinomial", "logStudent_multinomial")
+model_names = c(
+  "negBinomial", 
+  "multinomial", 
+  "dirichlet_multinomial", 
+  "logNormal_multinomial", 
+  "logStudent_multinomial"
+  )
 
 ```
 
@@ -189,7 +172,8 @@ Get generated quantities
 generated_quant = 
   foreach(fit = fits, model_name = fits %>% names, .combine = bind_rows) %dopar% {
     fit %>%
-      gather_samples(counts_gen[sample_idx, ens_iso_idx]) %>%
+      gather_samples(counts_gen_naive[sample_idx, ens_iso_idx], counts_gen_geneWise[sample_idx, ens_iso_idx]) %>%
+      ungroup() %>%
       mutate(model_name)
   } %>%
   left_join(counts_tidy) %>%
@@ -197,19 +181,22 @@ generated_quant =
 
 ```
 
-Plots
+Plots 
 
 ```{r}
 
+# Overall distribution
 generated_quant %>%
   gather(`Source`, `Read count`, c("Observed", "Estimated")) %>%
   filter(.iteration %in% 1:50 & .chain %in% 1) %>%
+  mutate(term = gsub("counts_gen_", "", term)) %>%
   
   # Plot
   {
-    ggplot((.), aes(`Read count` + 1, color = Source)) +
+    (.) %>%
+    ggplot(aes(`Read count` + 1, color = Source)) +
     stat_bin(geom = "step", position = "identity", bins=50) +
-    facet_wrap(~ model_name) +
+    facet_grid(term ~ model_name) +
     scale_x_log10() +
     scale_color_brewer(palette = "Set1") +
     my_theme +
@@ -222,4 +209,37 @@ generated_quant %>%
     (.)
   }
 
+# Gene-wise distribution
+generated_quant %>%
+  gather(`Source`, `Read count`, c("Observed", "Estimated")) %>%
+  filter(.iteration %in% 1:50 & .chain %in% 1) %>%
+  filter(term == "counts_gen_geneWise") %>%
+  right_join( (.) %>% distinct(ens_iso) %>% head(n=20) ) %>%
+
+  # Gene-wise plots
+  {
+    (.) %>%
+    ggplot(aes(`Read count` + 1, color = Source)) +
+    stat_bin(geom = "step", position = "identity", bins=50, size=0.2 ) +
+    facet_grid(model_name ~ ens_iso) +
+    scale_x_log10() +
+    scale_color_brewer(palette = "Set1") +
+      #scale_size()
+    my_theme +
+    theme(
+      strip.text.y = element_text(angle = 0),
+      strip.text.x = element_text(angle = 90, size=8)
+    ) +
+    ggtitle("Gene-wise read count distribution") 
+  } %>%
+  
+  # Save plot
+  {
+    ggsave(plot = (.), here("dev", "gene_wise_read_count_distribution.png"), width=29, height=21, units = "cm")
+    (.)
+  }
+  
+
 ```
+
+
