@@ -35,7 +35,7 @@ parameters {
 model {
 
   // Overall properties of the data
-  lambda_mu ~ normal(0,1);
+  lambda_mu ~ normal(0,5);
   lambda_sigma ~ cauchy(0,2);
   sigma ~ gamma(3,2);
 

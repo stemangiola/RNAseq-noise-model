@@ -41,3 +41,5 @@ rsconnect/
 # data directory
 data/*
 *.rds
+dev/Thumbs.db
+*.rds
