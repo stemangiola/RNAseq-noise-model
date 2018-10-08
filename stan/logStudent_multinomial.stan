@@ -11,7 +11,6 @@ data {
 parameters {
 
  // Overall properties of the data
-  real lambda_mu;
   real<lower=0> lambda_sigma;
   real<lower=0> sigma;
   real<lower=1> nu;
@@ -29,15 +28,14 @@ transformed parameters{
 model {
 
   // Overall properties of the data
-  lambda_mu ~ normal(0,5);
-  lambda_sigma ~ cauchy(0,2);
+  lambda_sigma ~ normal(0,2);
   sigma ~ cauchy(0,2);
   tau ~ gamma(nu/2, nu/2);
   nu ~ gamma(2,0.1);
 
   // Gene-wise properties of the data
   sum(lambda) ~ normal(0,0.01 * G);
-  lambda ~ normal(lambda_mu, lambda_sigma);
+  lambda ~ normal(0, lambda_sigma);
   for(n in 1:N) theta_z[n] ~ normal(0,1);
 
   // Sample from data
@@ -52,7 +50,7 @@ generated quantities{
   vector[G] theta_gen_geneWise[N];
 
   // Sample gene wise rates
-  for(g in 1:G) lambda_gen[g] = normal_rng(lambda_mu, lambda_sigma);
+  for(g in 1:G) lambda_gen[g] = normal_rng(0, lambda_sigma);
   for(n in 1:N) for(g in 1:G) theta_gen_naive[n,g] = student_t_rng(nu, lambda_gen[g],sigma);
   for(n in 1:N) for(g in 1:G) theta_gen_geneWise[n,g] = student_t_rng(nu, lambda[g],sigma);
 
