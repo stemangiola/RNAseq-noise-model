@@ -32,8 +32,8 @@ Setting global variables
 
 ```{r}
 
-N = 10 
-G = 30 
+N = 20 
+G = 50 
 
 # Import gene transcription data set
 counts_tidy =
