@@ -134,6 +134,8 @@ Compile all models
 ```{r, echo=FALSE}
 models = 
   foreach(model_name = model_names) %dopar% {
+    library(rstan) #On Windows, %dopar%-ed code does not share the main session
+    library(here)
     stan_model(here("stan",sprintf("%s.stan", model_name)))
   } %>% 
   setNames(model_names)
@@ -171,6 +173,8 @@ Get generated quantities
 ```{r}
 generated_quant = 
   foreach(fit = fits, model_name = fits %>% names, .combine = bind_rows) %dopar% {
+    library(dplyr)
+    library(tidybayes)
     fit %>%
       gather_samples(counts_gen_naive[sample_idx, ens_iso_idx], counts_gen_geneWise[sample_idx, ens_iso_idx]) %>%
       ungroup() %>%
