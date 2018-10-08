@@ -24,7 +24,7 @@ transformed parameters {
 model {
 
   // Overall properties of the data
-  lambda_mu ~ normal(0,1);
+  lambda_mu ~ normal(0,5);
   lambda_sigma ~ cauchy(0,2);
   sigma_raw ~ normal(0,1);
   exposure_rate ~ normal(0,1);
@@ -38,7 +38,8 @@ model {
 
 }
 generated quantities{
-  int<lower=0> counts_gen[N,G];
+  int<lower=0> counts_gen_naive[N,G];
+  int<lower=0> counts_gen_geneWise[N,G];
   vector[G] lambda_gen;
 
   // Sample gene wise rates
@@ -46,7 +47,8 @@ generated quantities{
 
   // Sample gene wise sample wise abundances
   for(n in 1:N) for(g in 1:G) {
-    counts_gen[n,g] = neg_binomial_2_log_rng(exposure_rate[n] + lambda_gen[g], sigma);
+    counts_gen_naive[n,g] = neg_binomial_2_log_rng(exposure_rate[n] + lambda_gen[g], sigma);
+    counts_gen_geneWise[n,g] = neg_binomial_2_log_rng(exposure_rate[n] + lambda[g],     sigma);
   }
 
 

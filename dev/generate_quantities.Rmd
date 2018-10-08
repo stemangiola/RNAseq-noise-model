@@ -16,6 +16,9 @@ library(magrittr)
 library(rstan)
 library(tidybayes)
 library(here)
+library(foreach)
+library(doParallel)
+registerDoParallel()
 # library(future)
 # plan(multiprocess)
 
@@ -29,15 +32,31 @@ Setting global variables
 
 ```{r}
 
-N = 10 
-G = 30 
+N = 20 
+G = 50 
 
 # Import gene transcription data set
 counts_tidy =
   read_csv(here("data", "tibble_TCGA_files/Acute_Myeloid_Leukemia_Primary_Blood_Derived_Cancer_-_Peripheral_Blood.csv")) %>%
-  mutate_if(is.character, as.factor) %>%
   filter(sample %in% ( (.) %>% distinct(sample) %>% head(n=N) %>% pull(sample)) ) %>%
-  filter(ens_iso %in% ( (.) %>% distinct(ens_iso) %>% head(n=G) %>% pull(ens_iso)) )
+  filter(ens_iso %in% ( (.) %>% distinct(ens_iso) %>% head(n=G) %>% pull(ens_iso)) ) %>%
+  mutate_if(is.character, as.factor) %>%
+
+  # Add numerical indexes
+  left_join(
+    (.) %>% 
+      distinct(ens_iso) %>% 
+      arrange(ens_iso) %>% 
+      mutate(ens_iso_idx = 1:n())
+  ) %>%
+  left_join(
+    (.) %>% 
+      distinct(sample) %>% 
+      arrange(sample) %>% 
+      mutate(sample_idx = 1:n())
+  )
+
+# Produce input for Stan
 counts =
   counts_tidy %>%
   select(ens_iso,`read count`,sample) %>%
@@ -48,7 +67,11 @@ counts =
 # Info on data set
 my_prior = c(0,5)
 omit_data = 0
-exposure = counts_tidy %>% group_by(sample) %>% summarise(`Total counts` = sum(`read count`)) %>% pull(`Total counts`)
+exposure = 
+  counts_tidy %>% 
+  group_by(sample) %>% 
+  summarise(`Total counts` = sum(`read count`)) %>% 
+  pull(`Total counts`)
 
 ```
 Wrappers
@@ -88,159 +111,135 @@ my_theme =
 	)
 
 
-plot_generated_quantities = function(gq){
-  
-  list(
-    
-    gq %>%
-    filter(.iteration %in% 1:10 & .chain == 1) %>%
-    ggplot(aes(`Read count`+1, color=.iteration)) +
-  	stat_bin(geom = "step", position = "identity", bins=50) +
-  	scale_x_log10() + 
-  	my_theme +
-    ggtitle("Iterations 1 to 10 grouped"),
-    
-    gq %>%
-    filter(.iteration %in% 1:10 & .chain == 1) %>%
-    ggplot(aes(`Read count`+1, color=.iteration)) +
-  	stat_bin(geom = "step", position = "identity", bins=50) +
-  	scale_x_log10() + 
-  	my_theme +
-    ggtitle("Iterations 1 to 10 together (roughly as if we had 1000 genes)")
-  ) %>%
-  cowplot::plot_grid(plotlist = ., align = "v",  axis="b", rel_widths = 1 )
-  
-}
+```
+
+Set model names
+
+```{r}
+# model_names = 
+#   dir(path = here("stan"), pattern = ".stan") %>%
+#   gsub("\\.stan", "", .)
+model_names = c(
+  "negBinomial", 
+  "multinomial", 
+  "dirichlet_multinomial", 
+  "logNormal_multinomial", 
+  "logStudent_multinomial"
+  )
+
 ```
 
 Compile all models
 
 ```{r, echo=FALSE}
-
-negBinomial_model = stan_model(here("stan","negBinomial.stan"))
-multinomial_model = stan_model(here("stan","multinomial.stan"))
-dirichlet_multinomial_model = stan_model(here("stan","dirichlet_multinomial.stan"))
-logNormal_multinomial_model = stan_model(here("stan","logNormal_multinomial.stan"))
-logStudent_multinomial_model = stan_model(here("stan","logStudent_multinomial.stan"))
-
+models = 
+  foreach(model_name = model_names) %dopar% {
+    stan_model(here("stan",sprintf("%s.stan", model_name)))
+  } %>% 
+  setNames(model_names)
 ```
 
 Run all models
 
 ```{r}
+fits = 
+  foreach(model = models, model_name = models %>% names) %do% {
+    sampling_check_return(
+      model, 
+      control = list(
+        max_treedepth = switch(
+          model_name, 
+          "logNormal_multinomial" = 12, 
+          "logStudent_multinomial" = 13, 
+          10
+        ) 
+      )
+    )
+  } %>% 
+  setNames(model_names)
 
-negBinomial_fit = sampling_check_return(negBinomial_model)
-multinomial_fit = sampling_check_return(multinomial_model) 
-dirichlet_multinomial_fit = sampling_check_return(dirichlet_multinomial_model) 
-logNormal_multinomial_fit = sampling_check_return(logNormal_multinomial_model, control =list(max_treedepth =12)) 
-logStudent_multinomial_fit = sampling_check_return(logStudent_multinomial_model, control =list(max_treedepth =13)) 
+# # Fit a single model
+# fits$logNormal_multinomial = sampling_check_return(
+#       models$logNormal_multinomial, 
+#       control = list( max_treedepth = 12)
+# )
+```
+
+
+Get generated quantities
+
+```{r}
+generated_quant = 
+  foreach(fit = fits, model_name = fits %>% names, .combine = bind_rows) %dopar% {
+    fit %>%
+      gather_samples(counts_gen_naive[sample_idx, ens_iso_idx], counts_gen_geneWise[sample_idx, ens_iso_idx]) %>%
+      ungroup() %>%
+      mutate(model_name)
+  } %>%
+  left_join(counts_tidy) %>%
+  rename(Observed = `read count`, Estimated = estimate)
 
 ```
 
-Simulate data from Negative Binomial model
+Plots 
 
 ```{r}
 
-# Fit model
+# Overall distribution
+generated_quant %>%
+  gather(`Source`, `Read count`, c("Observed", "Estimated")) %>%
+  filter(.iteration %in% 1:50 & .chain %in% 1) %>%
+  mutate(term = gsub("counts_gen_", "", term)) %>%
+  
+  # Plot
+  {
+    (.) %>%
+    ggplot(aes(`Read count` + 1, color = Source)) +
+    stat_bin(geom = "step", position = "identity", bins=50) +
+    facet_grid(term ~ model_name) +
+    scale_x_log10() +
+    scale_color_brewer(palette = "Set1") +
+    my_theme +
+    ggtitle("Overall read count distribution") 
+  } %>%
+  
+  # Save plot
+  {
+    ggsave(plot = (.), here("dev", "overall_read_count_distribution.png"))
+    (.)
+  }
 
-# Check fit and plot
-negBinomial_gen =
-  negBinomial_fit %>%
-  gather_samples(counts_gen[N, G]) %>%
-  left_join(
-    tibble(N = 1:( counts_tidy %>% pull(sample) %>% levels %>% length ))
-  )
+# Gene-wise distribution
+generated_quant %>%
+  gather(`Source`, `Read count`, c("Observed", "Estimated")) %>%
+  filter(.iteration %in% 1:50 & .chain %in% 1) %>%
+  filter(term == "counts_gen_geneWise") %>%
+  right_join( (.) %>% distinct(ens_iso) %>% head(n=20) ) %>%
 
-# Plot
-negBinomial_gen %>%
-  filter(.iteration== 1 & .chain == 1) %>%
-  ggplot(aes(estimate)) +
-  geom_histogram() +
-  scale_x_log10() +
-  my_theme
+  # Gene-wise plots
+  {
+    (.) %>%
+    ggplot(aes(`Read count` + 1, color = Source)) +
+    stat_bin(geom = "step", position = "identity", bins=50, size=0.2 ) +
+    facet_grid(model_name ~ ens_iso) +
+    scale_x_log10() +
+    scale_color_brewer(palette = "Set1") +
+      #scale_size()
+    my_theme +
+    theme(
+      strip.text.y = element_text(angle = 0),
+      strip.text.x = element_text(angle = 90, size=8)
+    ) +
+    ggtitle("Gene-wise read count distribution") 
+  } %>%
+  
+  # Save plot
+  {
+    ggsave(plot = (.), here("dev", "gene_wise_read_count_distribution.png"), width=29, height=21, units = "cm")
+    (.)
+  }
+  
 
-```
-
-Simulate data from Multinomial model
-
-```{r}
-
-# Fit model
-
-# Check fit and plot
-multinomial_gen =
-  multinomial_fit %>%
-  gather_samples(counts_gen[N, G])
-
-# Plot
-multinomial_gen %>%
-  filter(.iteration== 1 & .chain == 1) %>%
-  ggplot(aes(estimate)) +
-  geom_histogram() +
-  scale_x_log10() +
-  my_theme
-
-```
-
-Simulate data from Dirichlet-multinomial model
-
-```{r}
-
-# Fit model
-
-# Check fit and plot
-dirichlet_multinomial_gen =
-  dirichlet_multinomial_fit %>%
-  gather_samples(counts_gen[N, G])
-
-# Plot
-dirichlet_multinomial_gen  %>%
-  filter(.iteration== 1 & .chain == 1) %>%
-  ggplot(aes(estimate)) +
-  geom_histogram() +
-  scale_x_log10() +
-  my_theme
-
-
-```
-
-Simulate data from logNormal-multinomial model
-
-```{r}
-
-# Fit model
-
-# Check fit and plot
-logNormal_multinomial_gen =
-  logNormal_multinomial_fit %>%
-  gather_samples(counts_gen[N, G])
-
-# Plot
-logNormal_multinomial_gen %>%
-  filter(.iteration== 1 & .chain == 1) %>%
-  ggplot(aes(estimate)) +
-  geom_histogram() +
-  scale_x_log10() +
-  my_theme
-
-```
-
-```{r}
-
-# Fit model
-
-# Check fit and plot
-logStudent_multinomial_gen =
-  logStudent_multinomial_fit %>%
-  gather_samples(counts_gen[N, G])
-
-# Plot
-logStudent_multinomial_gen %>%
-  filter(.iteration== 1 & .chain == 1) %>%
-  ggplot(aes(estimate)) +
-  geom_histogram() +
-  scale_x_log10() +
-  my_theme
 ```
 
 
