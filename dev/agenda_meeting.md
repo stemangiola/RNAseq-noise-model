@@ -8,3 +8,4 @@ _(we can feel this cooperatively)_
 3) Models to include in the publication
 4) Parallelisation
 5) Estimated submission time
+6) Models divergencies and tree depth limits, identifying the problems
