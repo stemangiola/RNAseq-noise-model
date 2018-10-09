@@ -36,6 +36,7 @@ N = 20
 G = 50 
 counts_source = "Acute_Myeloid_Leukemia_Primary_Blood_Derived_Cancer_-_Peripheral_Blood"
 
+# Evaluate whether to recompute input data frame
 temp_file_counts = here("local_temp_data",paste0("subset_", counts_source,".rds")) 
 if(!file.exists(temp_file_counts)) {
   recompute_counts_tidy = TRUE
@@ -100,7 +101,7 @@ data_for_stan = list(
 )
 ```
 
-Wrappers
+Wrappers and utilities
 
 ```{r}
 
@@ -112,12 +113,6 @@ check_return = function(fit){
 sampling_check_return = function(model, cores = 4, iter = 500, ...){
   sampling(model, cores = cores, iter = iter, ...) %>% check_return
 }
-
-```
-
-Plottig utilities
-
-```{r}
 
 # Set theme plots
 my_theme = 	
@@ -161,7 +156,7 @@ Compile all models
 models = 
   foreach(model_name = model_names) %dopar% {
     library(rstan) #On Windows, %dopar%-ed code does not share the main session
-    library(here)
+    library(here) #On Windows, %dopar%-ed code does not share the main session
     stan_model(here("stan",sprintf("%s.stan", model_name)))
   } %>% 
   setNames(model_names)
@@ -188,8 +183,9 @@ fits =
   setNames(model_names)
 
 # # Fit a single model
-# fits$logNormal_multinomial = sampling_check_return(
-#       models$logNormal_multinomial, 
+# fits$negBinomial = sampling_check_return(
+#       models$negBinomial,
+#       data = data_for_stan,
 #       control = list( max_treedepth = 12)
 # )
 ```
@@ -200,8 +196,8 @@ Get generated quantities
 ```{r}
 generated_quant = 
   foreach(fit = fits, model_name = fits %>% names, .combine = bind_rows) %dopar% {
-    library(dplyr)
-    library(tidybayes)
+    library(dplyr) #On Windows, %dopar%-ed code does not share the main session
+    library(tidybayes) #On Windows, %dopar%-ed code does not share the main session
     fit %>%
       gather_samples(counts_gen_naive[sample_idx, ens_iso_idx], counts_gen_geneWise[sample_idx, ens_iso_idx]) %>%
       ungroup() %>%
