@@ -79,28 +79,6 @@ if(recompute_counts_tidy) {
 
 ```
 
-```{r}
-data_for_stan = list(
-  N = N, 
-  G = G,
-  counts =
-    counts_tidy %>%
-    select(ens_iso,`read count`,sample) %>%
-    spread(ens_iso, `read count`) %>%
-    select(-sample) %>%
-    as.matrix(),
-  
-  # Info on data set
-  my_prior = c(0,5),
-  omit_data = 0,
-  exposure = 
-    counts_tidy %>% 
-    group_by(sample) %>% 
-    summarise(`Total counts` = sum(`read count`)) %>% 
-    pull(`Total counts`)
-)
-```
-
 Wrappers and utilities
 
 ```{r}
@@ -132,6 +110,28 @@ my_theme =
 	)
 
 
+```
+
+```{r}
+data_for_stan = list(
+  N = N, 
+  G = G,
+  counts =
+    counts_tidy %>%
+    select(ens_iso,`read count`,sample) %>%
+    spread(ens_iso, `read count`) %>%
+    select(-sample) %>%
+    as.matrix(),
+  
+  # Info on data set
+  my_prior = c(0,5),
+  omit_data = 0,
+  exposure = 
+    counts_tidy %>% 
+    group_by(sample) %>% 
+    summarise(`Total counts` = sum(`read count`)) %>% 
+    pull(`Total counts`)
+)
 ```
 
 Set model names
@@ -166,27 +166,37 @@ Run all models
 
 ```{r}
 fits = 
-  foreach(model = models, model_name = models %>% names) %do% {
-    sampling_check_return(
-      model, 
-      data = data_for_stan,
-      control = list(
-        max_treedepth = switch(
-          model_name, 
-          "logNormal_multinomial" = 12, 
-          "logStudent_multinomial" = 13, 
-          10
-        ) 
+  foreach(model = models, model_name = models %>% names, .combine = c) %:% 
+  foreach(is_prior_asymetric = c(0,1), .combine = c) %do% {
+    
+    # Trick for naming list
+    my_list = list()
+    my_list[[sprintf("%s_asymmetric-%s", model_name, is_prior_asymetric)]] =
+      sampling_check_return(
+        model, 
+        data = 
+          data_for_stan %>% 
+          lplyr::mutate(is_prior_asymetric = is_prior_asymetric),
+        control = list(
+          max_treedepth = switch(
+            model_name, 
+            "logNormal_multinomial" = 12, 
+            "logStudent_multinomial" = 13, 
+            10
+          ) 
+        )
       )
-    )
-  } %>% 
-  setNames(model_names)
+    
+    # Return
+    my_list
+  }
 
 # # Fit a single model
-# fits$negBinomial = sampling_check_return(
-#       models$negBinomial,
-#       data = data_for_stan,
-#       control = list( max_treedepth = 12)
+# fits$multinomial = 
+#   sampling_check_return(
+#      stan_model(here("stan",sprintf("%s.stan", "multinomial"))),
+#     data = data_for_stan,
+#     control = list( max_treedepth = 12)
 # )
 ```
 
@@ -227,6 +237,10 @@ generated_quant %>%
     scale_x_log10() +
     scale_color_brewer(palette = "Set1") +
     my_theme +
+    theme(
+    strip.text.y = element_text(angle = 0),
+    strip.text.x = element_text(angle = 90, size=8)
+    ) +
     ggtitle("Overall read count distribution") 
   } %>%
   
