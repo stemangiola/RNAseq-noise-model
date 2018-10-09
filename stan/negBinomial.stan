@@ -9,6 +9,7 @@ data {
 parameters {
 
   // Overall properties of the data
+  real lambda_mu;
   real<lower=0> lambda_sigma;
   real<lower=0> sigma_raw;
   real exposure_rate[N];
