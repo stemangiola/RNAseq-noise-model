@@ -59,7 +59,7 @@ transformed parameters {
 model {
 
   // Overall properties of the data
-  lambda_mu ~ normal(0,5);
+  lambda_mu ~ gamma(1.001,2);
   lambda_sigma ~ normal(0,2);
   sigma_raw ~ normal(0,1);
   exposure_rate ~ normal(0,1);
