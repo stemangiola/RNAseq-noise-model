@@ -39,7 +39,7 @@ rsconnect/
 *.nb.html
 
 # data directory
-data/*
+big_data/*
 *.rds
 dev/Thumbs.db
 *.rds
