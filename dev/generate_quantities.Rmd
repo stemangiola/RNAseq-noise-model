@@ -53,7 +53,7 @@ if(!file.exists(temp_file_counts)) {
 if(recompute_counts_tidy) {
   # Import gene transcription data set
   counts_tidy =
-    read_csv(here("data", "tibble_TCGA_files", paste0(counts_source, ".csv"))) %>%
+    read_csv(here("big_data", "tibble_TCGA_files", paste0(counts_source, ".csv"))) %>%
     filter(sample %in% ( (.) %>% distinct(sample) %>% head(n=N) %>% pull(sample)) ) %>%
     filter(ens_iso %in% ( (.) %>% distinct(ens_iso) %>% head(n=G) %>% pull(ens_iso)) ) %>%
     mutate_if(is.character, as.factor) %>%
