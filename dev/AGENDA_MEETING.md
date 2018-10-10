@@ -9,3 +9,4 @@ _(we can feel this cooperatively)_
 4) Parallelisation
 5) Estimated submission time
 6) Models divergencies and tree depth limits, identifying the problems
+7) What comparison algorithms should we use
