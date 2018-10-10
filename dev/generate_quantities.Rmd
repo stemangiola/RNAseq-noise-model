@@ -25,7 +25,7 @@ registerDoParallel()
 rstan_options(auto_write = TRUE)
 options(mc.cores = parallel::detectCores())
 
-devtools::load_all()
+devtools::install(quick = TRUE) #The PKG needs to be installed for sampling_multi to work
 ```
 
 Setting global variables
@@ -165,21 +165,20 @@ models =
 Run all models
 
 ```{r}
-fits = 
-  foreach(model = models, model_name = models %>% names) %do% {
-    sampling_check_return(
-      model, 
-      data = data_for_stan,
-      control = list(
+data_list = list()
+control_list = list()
+for(i in 1:length(models)) {
+  data_list[[i]] = data_for_stan
+  control_list[[i]] = list(
         max_treedepth = switch(
-          model_name, 
+          model_names[i], 
           "logNormal_multinomial" = 12, 
           "logStudent_multinomial" = 13, 
           10
-        ) 
-      )
-    )
-  } %>% 
+        )) 
+}
+
+fits = sampling_multi(models, data_list, control_per_item = control_list) %>% 
   setNames(model_names)
 
 # # Fit a single model
@@ -197,7 +196,7 @@ Get generated quantities
 generated_quant = 
   foreach(fit = fits, model_name = fits %>% names, .combine = bind_rows) %dopar% {
     library(dplyr) #On Windows, %dopar%-ed code does not share the main session
-    library(tidybayes) #On Windows, %dopar%-ed code does not share the main session
+    library(tidybayes) 
     fit %>%
       gather_samples(counts_gen_naive[sample_idx, ens_iso_idx], counts_gen_geneWise[sample_idx, ens_iso_idx]) %>%
       ungroup() %>%

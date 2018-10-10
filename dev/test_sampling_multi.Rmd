@@ -1,0 +1,96 @@
+---
+title: "Testing sampling multi"
+output: html_notebook
+---
+
+```{r setup}
+library(rstan)
+rstan_options(auto_write = TRUE)
+devtools::install(quick = TRUE,build_vignettes = FALSE)
+library(RNASeqNoiseModel)
+
+simple_model_code = "
+data {
+  real x[5];
+}
+
+parameters {
+  real mu;
+}
+
+model {
+  x ~ normal(mu, 1);
+}
+"
+simple_model = stan_model(model_code = simple_model_code)
+
+second_simple_model = stan_model(model_code = "
+data {
+  real x[7];
+}
+
+parameters {
+  real<lower=0> sigma;
+}
+
+model {
+  x ~ normal(0, sigma);
+}
+")
+
+```
+
+```{r}
+num_data = 10
+data_list = list()
+for(i in 1:num_data) {
+  data_list[[i]] = list(x = rnorm(5, i, 1))
+}
+
+res = sampling_multi(simple_model, data_list)
+res[[1]]
+res[[10]]
+```
+
+```{r}
+num_data = 5
+data_list = list()
+models = list()
+for(i in 1:num_data) {
+  data_list[[i]] = list(x = rnorm(5, i, 1))
+  models[[i]] = simple_model
+}
+
+for(i in 1:num_data) {
+  data_list[[i + num_data]] = list(x = rnorm(7, 0, i))
+  models[[i + num_data]] = second_simple_model
+}
+
+res = sampling_multi(models, data_list)
+res[[1]]
+res[[5]]
+res[[6]]
+res[[10]]
+```
+
+Storing to files
+
+```{r}
+num_data = 10
+data_list = list()
+for(i in 1:num_data) {
+  data_list[[i]] = list(x = rnorm(5, i, 1))
+}
+
+if(!dir.exists("local_temp_data")) {
+  dir.create("local_temp_data")
+}
+res = sampling_multi(simple_model, data_list, 
+                     map_fun = sampling_multi_store_file_generator("local_temp_data","simple_fit"), 
+                     combine_fun = c)
+
+res[[1]]
+res[[1]] %>% map(readRDS) %>% sflist2stanfit()
+res[[10]]
+res[[10]] %>% map(readRDS) %>% sflist2stanfit()
+```
