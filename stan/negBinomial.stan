@@ -40,26 +40,29 @@ data {
 
   // Alternative models
   int<lower=0, upper=1> is_prior_asymetric;
+  int<lower=1> variance_size;
+
 }
 parameters {
 
   // Overall properties of the data
   real<lower=0> lambda_mu; // So is compatible with logGamma prior
   real<lower=0> lambda_sigma;
-  real<lower=0> sigma_raw;
   real exposure_rate[N];
 
   // Gene-wise properties of the data
+  vector<lower=0>[variance_size] sigma_raw;
   vector[G] lambda;
 
 }
 transformed parameters {
-  real sigma = 1/sqrt(sigma_raw);
+
+  vector[G] sigma = variance_size == 1 ? rep_vector(1/sqrt(sigma_raw[1]), G) :  1 ./ sqrt(sigma_raw);
 }
 model {
 
   // Overall properties of the data
-  lambda_mu ~ normal(0,5);
+  lambda_mu ~ gamma(1.001,2);
   lambda_sigma ~ normal(0,2);
   sigma_raw ~ normal(0,1);
   exposure_rate ~ normal(0,1);
@@ -81,10 +84,6 @@ generated quantities{
   for(g in 1:G) lambda_gen[g] = normal_or_gammaLog_rng(lambda_mu, lambda_sigma, is_prior_asymetric);
 
   // Sample gene wise sample wise abundances
-  for(n in 1:N) for(g in 1:G) {
-    counts_gen_naive[n,g] = neg_binomial_2_log_rng(exposure_rate[n] + lambda_gen[g], sigma);
-    counts_gen_geneWise[n,g] = neg_binomial_2_log_rng(exposure_rate[n] + lambda[g],  sigma);
-  }
-
-
+  for(n in 1:N) for(g in 1:G) counts_gen_naive[n,g] = neg_binomial_2_log_rng(exposure_rate[n] + lambda_gen[g], sigma[g]);
+  for(n in 1:N) for(g in 1:G) counts_gen_geneWise[n,g] = neg_binomial_2_log_rng(exposure_rate[n] + lambda[g],  sigma[g]);
 }

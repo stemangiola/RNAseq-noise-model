@@ -76,10 +76,7 @@ generated quantities{
   for(g in 1:G) lambda_gen[g] = normal_or_gammaLog_rng(lambda_mu, lambda_sigma, is_prior_asymetric);
 
   // Sample gene wise sample wise abundances
-  for(n in 1:N) {
-    counts_gen_naive[n,] = multinomial_rng(softmax(lambda_gen), exposure[n]);
-    counts_gen_geneWise[n,] = multinomial_rng(softmax(lambda), exposure[n]);
-  }
-
+  for(n in 1:N) counts_gen_naive[n,] = multinomial_rng(softmax(lambda_gen), exposure[n]);
+  for(n in 1:N) counts_gen_geneWise[n,] = multinomial_rng(softmax(lambda), exposure[n]);
 
 }

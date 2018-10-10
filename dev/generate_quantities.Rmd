@@ -155,8 +155,8 @@ Compile all models
 ```{r, echo=FALSE}
 models = 
   foreach(model_name = model_names) %dopar% {
-    library(rstan) #On Windows, %dopar%-ed code does not share the main session
-    library(here) #On Windows, %dopar%-ed code does not share the main session
+    library(rstan) # On Windows, %dopar%-ed code does not share the main session
+    library(here)  # On Windows, %dopar%-ed code does not share the main session
     stan_model(here("stan",sprintf("%s.stan", model_name)))
   } %>% 
   setNames(model_names)
@@ -165,18 +165,24 @@ models =
 Run all models
 
 ```{r}
+
 fits = 
   foreach(model = models, model_name = models %>% names, .combine = c) %:% 
-  foreach(is_prior_asymetric = c(0,1), .combine = c) %do% {
+  foreach(is_prior_asymetric = c(1), .combine = c) %:% 
+  foreach(variance_size = c(1,G), .combine = c) %do% {
+
+    # If not applicable skip
+    if(model_name %in% c("multinomial", "dirichlet_multinomial") & variance_size > 1) return(NULL)
     
     # Trick for naming list
     my_list = list()
-    my_list[[sprintf("%s_asymmetric-%s", model_name, is_prior_asymetric)]] =
+    my_list[[sprintf("%s_a-%s_v-%s", model_name, is_prior_asymetric, variance_size)]] =
       sampling_check_return(
         model, 
         data = 
           data_for_stan %>% 
-          lplyr::mutate(is_prior_asymetric = is_prior_asymetric),
+          lplyr::mutate(is_prior_asymetric = is_prior_asymetric) %>%
+          lplyr::mutate(variance_size = variance_size),
         control = list(
           max_treedepth = switch(
             model_name, 
@@ -191,19 +197,24 @@ fits =
     my_list
   }
 
-# # Fit a single model
-# fits$multinomial = 
-#   sampling_check_return(
-#      stan_model(here("stan",sprintf("%s.stan", "multinomial"))),
-#     data = data_for_stan,
-#     control = list( max_treedepth = 12)
-# )
+# Fit a single model
+fits$`logStudent_multinomial_a-1_v-50` =
+  sampling_check_return(
+    stan_model(here("stan",sprintf("%s.stan", "logStudent_multinomial"))),
+    data =
+      data_for_stan  %>%
+      lplyr::mutate(is_prior_asymetric = 1) %>%
+      lplyr::mutate(variance_size = G),
+    control = list( max_treedepth = 12)
+)
 ```
 
 
-Get generated quantities
+Plot abundance estimates 
 
 ```{r}
+
+# Get generated quantities
 generated_quant = 
   foreach(fit = fits, model_name = fits %>% names, .combine = bind_rows) %dopar% {
     library(dplyr) #On Windows, %dopar%-ed code does not share the main session
@@ -215,12 +226,6 @@ generated_quant =
   } %>%
   left_join(counts_tidy) %>%
   rename(Observed = `read count`, Estimated = estimate)
-
-```
-
-Plots 
-
-```{r}
 
 # Overall distribution
 generated_quant %>%
@@ -241,6 +246,7 @@ generated_quant %>%
     strip.text.y = element_text(angle = 0),
     strip.text.x = element_text(angle = 90, size=8)
     ) +
+      ylim(0,6000) +
     ggtitle("Overall read count distribution") 
   } %>%
   
@@ -279,7 +285,47 @@ generated_quant %>%
     ggsave(plot = (.), here("dev", "gene_wise_read_count_distribution.png"), width=29, height=21, units = "cm")
     (.)
   }
+
+```
+
+Plots variances trend
+
+```{r}
+
+# Get generated quantities
+foreach(
+  fit = fits[fits %>% names %>% grep("v-1", ., invert=T)], 
+  model_name = fits %>% names %>% grep("v-1", ., invert=T, value = T), 
+  .combine = bind_rows
+) %do% {
+  library(dplyr) #On Windows, %dopar%-ed code does not share the main session
+  library(tidybayes) #On Windows, %dopar%-ed code does not share the main session
+  fit %>%
+    spread_samples(sigma_raw[G], lambda[G]) %>%
+    ungroup() %>%
+    mutate(model_name)
+} %>% 
+  mutate(G = as.factor(G)) %>%
+
+  # Plot
+  {
+    (.) %>%
+    ggplot(aes(x = lambda, y = sigma_raw)) + 
+    stat_ellipse(geom = "polygon", alpha = 0.2, color=NA, aes(group=G)) +
+    geom_smooth(method = lm, formula = y ~ splines::bs(x, 3), se = FALSE) +
+    facet_grid(~ model_name, scales = "free") +
+    my_theme +
+    theme(
+      strip.text.y = element_text(angle = 0),
+      strip.text.x = element_text(angle = 60, size=8)
+    )
+  } %>%
   
+  # Save plot
+  {
+    ggsave(plot = (.), here("dev", "variance_trend.png"), width=18.3, height=18.3/2.5, units = "cm")
+    (.)
+  }
 
 ```
 
