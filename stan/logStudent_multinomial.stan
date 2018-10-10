@@ -89,8 +89,8 @@ generated quantities{
 
   // Sample gene wise rates
   for(g in 1:G) lambda_gen[g] = normal_or_gammaLog_rng(lambda_mu, lambda_sigma, is_prior_asymetric);
-  for(n in 1:N) for(g in 1:G) theta_gen_naive[n,g] = student_t_rng(nu, lambda_gen[g],sigma);
-  for(n in 1:N) for(g in 1:G) theta_gen_geneWise[n,g] = student_t_rng(nu, lambda[g],sigma);
+  for(n in 1:N) for(g in 1:G) theta_gen_naive[n,g] = student_t_rng(tau, lambda_gen[g],sigma);
+  for(n in 1:N) for(g in 1:G) theta_gen_geneWise[n,g] = student_t_rng(tau, lambda[g],sigma);
 
   // Sample gene wise sample wise abundances
   for(n in 1:N) {
