@@ -191,13 +191,13 @@ fits =
     my_list
   }
 
-# # Fit a single model
-# fits$multinomial = 
-#   sampling_check_return(
-#      stan_model(here("stan",sprintf("%s.stan", "multinomial"))),
-#     data = data_for_stan,
-#     control = list( max_treedepth = 12)
-# )
+# Fit a single model
+fits$`negBinomial_a-1_v-50` =
+  sampling_check_return(
+     stan_model(here("stan",sprintf("%s.stan", "negBinomial"))),
+    data = data_for_stan,
+    control = list( max_treedepth = 10)
+)
 ```
 
 

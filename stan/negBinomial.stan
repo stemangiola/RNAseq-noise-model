@@ -45,7 +45,7 @@ parameters {
 
   // Overall properties of the data
   real<lower=0> lambda_mu; // So is compatible with logGamma prior
-  real<lower=0> lambda_sigma;
+  real<lower=0> lambda_sigma_raw;
   real<lower=0> sigma_raw;
   real exposure_rate[N];
 
@@ -54,16 +54,17 @@ parameters {
 
 }
 transformed parameters {
+  real<lower=0> lambda_sigma = lambda_sigma_raw / 1000;
   real sigma = 1/sqrt(sigma_raw);
 }
 model {
 
   // Overall properties of the data
-  lambda_mu ~ gamma(1.001,2);
-  lambda_sigma ~ normal(0,2);
+  lambda_mu ~ gamma(3,2);
+  lambda_sigma_raw ~ normal(0,1);
   sigma_raw ~ normal(0,1);
   exposure_rate ~ normal(0,1);
-  sum(exposure_rate) ~ normal(0, 0.01 * N);
+  sum(exposure_rate) ~ normal(0, 0.001 * N);
 
   // Gene-wise properties of the data
   lambda ~ normal_or_gammaLog(lambda_mu, lambda_sigma, is_prior_asymetric);
