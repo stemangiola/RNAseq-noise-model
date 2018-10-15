@@ -33,7 +33,7 @@ Setting global variables
 ```{r}
 
 N = 20 
-G = 50 
+G = 1000 
 counts_source = "Acute_Myeloid_Leukemia_Primary_Blood_Derived_Cancer_-_Peripheral_Blood"
 
 # Evaluate whether to recompute input data frame
