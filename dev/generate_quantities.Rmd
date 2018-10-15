@@ -332,7 +332,7 @@ foreach(
   
   # Save plot
   {
-    ggsave(plot = (.), here("dev", "variance_trend.png"), width=18.3, height=18.3/2.5, units = "cm")
+    ggsave(plot = (.), here("dev", "variance_trend.png"), width=18.3, height=18.3, units = "cm")
     (.)
   }
 
