@@ -66,7 +66,7 @@ model {
   lambda_sigma ~ normal(0,2);
   sigma_raw ~ normal(0,1);
   exposure_rate ~ normal(0,1);
-  sum(exposure_rate) ~ normal(0, 0.01 * N);
+  sum(exposure_rate) ~ normal(0, 0.001 * N);
 
   // Gene-wise properties of the data
   lambda ~ normal_or_gammaLog(lambda_mu, lambda_sigma, is_prior_asymetric);

@@ -74,7 +74,7 @@ model {
   nu ~ gamma(2,0.1);
 
   // Gene-wise properties of the data
-  sum(lambda) ~ normal(0,0.01 * G);
+  sum(lambda) ~ normal(0,0.001 * G);
   lambda ~ normal_or_gammaLog(lambda_mu, lambda_sigma, is_prior_asymetric);
   for(n in 1:N) theta_z[n] ~ normal(0,1);
 
