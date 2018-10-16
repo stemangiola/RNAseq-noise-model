@@ -32,12 +32,12 @@ Setting global variables
 
 ```{r}
 
-N = 20 
-G = 1000 
+N = 20
+G = 1000
 counts_source = "Acute_Myeloid_Leukemia_Primary_Blood_Derived_Cancer_-_Peripheral_Blood"
 
 # Evaluate whether to recompute input data frame
-temp_file_counts = here("local_temp_data",paste0("subset_", counts_source,".rds")) 
+temp_file_counts = here("local_temp_data",paste0("subset_", counts_source,".rds"))
 if(!file.exists(temp_file_counts)) {
   recompute_counts_tidy = TRUE
 } else {
@@ -57,21 +57,21 @@ if(recompute_counts_tidy) {
     filter(sample %in% ( (.) %>% distinct(sample) %>% head(n=N) %>% pull(sample)) ) %>%
     filter(ens_iso %in% ( (.) %>% distinct(ens_iso) %>% head(n=G) %>% pull(ens_iso)) ) %>%
     mutate_if(is.character, as.factor) %>%
-  
+
     # Add numerical indexes
     left_join(
-      (.) %>% 
-        distinct(ens_iso) %>% 
-        arrange(ens_iso) %>% 
+      (.) %>%
+        distinct(ens_iso) %>%
+        arrange(ens_iso) %>%
         mutate(ens_iso_idx = 1:n())
     ) %>%
     left_join(
-      (.) %>% 
-        distinct(sample) %>% 
-        arrange(sample) %>% 
+      (.) %>%
+        distinct(sample) %>%
+        arrange(sample) %>%
         mutate(sample_idx = 1:n())
     )
-  
+
   counts_data = list(N = N, G = G, counts_tidy = counts_tidy)
   saveRDS(counts_data, file = temp_file_counts)
 }
@@ -114,7 +114,7 @@ my_theme =
 
 ```{r}
 data_for_stan = list(
-  N = N, 
+  N = N,
   G = G,
   counts =
     counts_tidy %>%
@@ -122,14 +122,14 @@ data_for_stan = list(
     spread(ens_iso, `read count`) %>%
     select(-sample) %>%
     as.matrix(),
-  
+
   # Info on data set
   my_prior = c(0,5),
   omit_data = 0,
-  exposure = 
-    counts_tidy %>% 
-    group_by(sample) %>% 
-    summarise(`Total counts` = sum(`read count`)) %>% 
+  exposure =
+    counts_tidy %>%
+    group_by(sample) %>%
+    summarise(`Total counts` = sum(`read count`)) %>%
     pull(`Total counts`)
 )
 ```
@@ -137,14 +137,14 @@ data_for_stan = list(
 Set model names
 
 ```{r}
-# model_names = 
+# model_names =
 #   dir(path = here("stan"), pattern = ".stan") %>%
 #   gsub("\\.stan", "", .)
 model_names = c(
-  "negBinomial", 
-  "multinomial", 
-  "dirichlet_multinomial", 
-  "logNormal_multinomial", 
+  "negBinomial",
+  "multinomial",
+  "dirichlet_multinomial",
+  "logNormal_multinomial",
   "logStudent_multinomial"
   )
 
@@ -153,12 +153,12 @@ model_names = c(
 Compile all models
 
 ```{r, echo=FALSE}
-models = 
+models =
   foreach(model_name = model_names) %dopar% {
     library(rstan) # On Windows, %dopar%-ed code does not share the main session
     library(here)  # On Windows, %dopar%-ed code does not share the main session
     stan_model(here("stan",sprintf("%s.stan", model_name)))
-  } %>% 
+  } %>%
   setNames(model_names)
 ```
 
@@ -166,33 +166,33 @@ Run all models
 
 ```{r}
 
-fits = 
-  foreach(model = models, model_name = models %>% names, .combine = c) %:% 
-  foreach(is_prior_asymetric = c(1), .combine = c) %:% 
+fits =
+  foreach(model = models, model_name = models %>% names, .combine = c) %:%
+  foreach(is_prior_asymetric = c(1), .combine = c) %:%
   foreach(variance_size = c(1,G), .combine = c) %do% {
 
     # If not applicable skip
     if(model_name %in% c("multinomial", "dirichlet_multinomial") & variance_size > 1) return(NULL)
-    
+
     # Trick for naming list
     my_list = list()
     my_list[[sprintf("%s_a-%s_v-%s", model_name, is_prior_asymetric, variance_size)]] =
       sampling_check_return(
-        model, 
-        data = 
-          data_for_stan %>% 
+        model,
+        data =
+          data_for_stan %>%
           lplyr::mutate(is_prior_asymetric = is_prior_asymetric) %>%
           lplyr::mutate(variance_size = variance_size),
         control = list(
           max_treedepth = switch(
-            model_name, 
-            "logNormal_multinomial" = 12, 
-            "logStudent_multinomial" = 13, 
+            model_name,
+            "logNormal_multinomial" = 12,
+            "logStudent_multinomial" = 13,
             10
-          ) 
+          )
         )
       )
-    
+
     # Return
     my_list
   }
@@ -219,12 +219,12 @@ fits$`logNormal_multinomial_a-1_v-1_2` =
 ```
 
 
-Plot abundance estimates 
+Plot abundance estimates
 
 ```{r}
 
 # Get generated quantities
-generated_quant = 
+generated_quant =
   foreach(fit = fits, model_name = fits %>% names, .combine = bind_rows) %dopar% {
     library(dplyr) #On Windows, %dopar%-ed code does not share the main session
     library(tidybayes) #On Windows, %dopar%-ed code does not share the main session
@@ -241,7 +241,7 @@ generated_quant %>%
   gather(`Source`, `Read count`, c("Observed", "Estimated")) %>%
   filter(.iteration %in% 1:50 & .chain %in% 1) %>%
   mutate(term = gsub("counts_gen_", "", term)) %>%
-  
+
   # Plot
   {
     (.) %>%
@@ -256,9 +256,9 @@ generated_quant %>%
     strip.text.x = element_text(angle = 90, size=8)
     ) +
       ylim(0,6000) +
-    ggtitle("Overall read count distribution") 
+    ggtitle("Overall read count distribution")
   } %>%
-  
+
   # Save plot
   {
     ggsave(plot = (.), here("dev", "overall_read_count_distribution.png"))
@@ -286,9 +286,9 @@ generated_quant %>%
       strip.text.y = element_text(angle = 0),
       strip.text.x = element_text(angle = 90, size=8)
     ) +
-    ggtitle("Gene-wise read count distribution") 
+    ggtitle("Gene-wise read count distribution")
   } %>%
-  
+
   # Save plot
   {
     ggsave(plot = (.), here("dev", "gene_wise_read_count_distribution.png"), width=29, height=21, units = "cm")
@@ -303,8 +303,8 @@ Plots variances trend
 
 # Get generated quantities
 foreach(
-  fit = fits[fits %>% names %>% grep("v-1", ., invert=T)], 
-  model_name = fits %>% names %>% grep("v-1", ., invert=T, value = T), 
+  fit = fits[fits %>% names %>% grep("v-1", ., invert=T)],
+  model_name = fits %>% names %>% grep("v-1", ., invert=T, value = T),
   .combine = bind_rows
 ) %do% {
   library(dplyr) #On Windows, %dopar%-ed code does not share the main session
@@ -313,13 +313,13 @@ foreach(
     spread_samples(sigma_raw[G], lambda[G]) %>%
     ungroup() %>%
     mutate(model_name)
-} %>% 
+} %>%
   mutate(G = as.factor(G)) %>%
 
   # Plot
   {
     (.) %>%
-    ggplot(aes(x = lambda, y = sigma_raw)) + 
+    ggplot(aes(x = lambda, y = sigma_raw)) +
     stat_ellipse(geom = "polygon", alpha = 0.2, color=NA, aes(group=G)) +
     geom_smooth(method = lm, formula = y ~ splines::bs(x, 3), se = FALSE) +
     facet_grid(~ model_name, scales = "free") +
@@ -329,7 +329,7 @@ foreach(
       strip.text.x = element_text(angle = 60, size=8)
     )
   } %>%
-  
+
   # Save plot
   {
     ggsave(plot = (.), here("dev", "variance_trend.png"), width=18.3, height=18.3, units = "cm")
@@ -337,5 +337,3 @@ foreach(
   }
 
 ```
-
-

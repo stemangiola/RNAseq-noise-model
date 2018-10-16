@@ -1,8 +1,11 @@
 functions{
-	real gamma_log_lpdf(vector x_log, real a, real b){
+	real gamma_log_lpdf(vector x_log, real a){
 
     // This function is the  probability of the log gamma funnction
     // in case you have data that is aleady in log form
+
+    // Constrain Mean to be 0
+    real b = exp(digamma(a));
 
 		vector[rows(x_log)] jacob = x_log; //jacobian
 		real norm_constant = a * log(b) -lgamma(a);
@@ -11,22 +14,26 @@ functions{
 
 	}
 
-	real normal_or_gammaLog_lpdf(vector x_log, real a, real b, int is_prior_asymetric){
+	real normal_or_gammaLog_lpdf(vector x_log, real a, int is_prior_asymetric){
 	  // This function takes care of the two prior choice
 	  // without complicating too much the model itself
     real lpdf;
-	  if(is_prior_asymetric == 1) lpdf = gamma_log_lpdf(x_log | a, b);
-	  else lpdf = normal_lpdf(x_log | 0, b);
+	  if(is_prior_asymetric == 1) lpdf = gamma_log_lpdf(x_log | a);
+	  else lpdf = normal_lpdf(x_log | 0, a);
 
 	  return lpdf;
 	}
 
-	 real normal_or_gammaLog_rng(real a, real b, int is_prior_asymetric){
+	 real normal_or_gammaLog_rng(real a, int is_prior_asymetric){
 	  // This function takes care of the two prior choice
 	  // without complicating too much the model itself
     real rng;
+
+    // Constrain Mean to be 0
+    real b = exp(digamma(a));
+
 	  if(is_prior_asymetric == 1) rng = log(gamma_rng(a, b));
-	  else rng = normal_rng(0, b);
+	  else rng = normal_rng(0, a);
 
 	  return rng;
 	}
@@ -48,8 +55,7 @@ data {
 parameters {
 
   // Overall properties of the data
-  real<lower=0> lambda_mu; // So is compatible with logGamma prior
-  real<lower=0> lambda_sigma;
+  real<lower=0> lambda_prior; // So is compatible with logGamma prior
 
   // Gene-wise properties of the data
   vector[G] lambda;
@@ -65,13 +71,12 @@ transformed parameters{
 model {
 
   // Overall properties of the data
-  lambda_mu ~ normal(0,1);
-  lambda_sigma ~ normal(0,2);
-  sigma_raw ~ normal(0,1);
+  lambda_prior ~ normal(0,1);
+	sigma_raw ~ normal(0,1);
 
   // Gene-wise properties of the data
   sum(lambda) ~ normal(0,0.001 * G);
-  lambda ~ normal_or_gammaLog(lambda_mu, lambda_sigma, is_prior_asymetric);
+  lambda ~ normal_or_gammaLog(lambda_prior, is_prior_asymetric);
   for(n in 1:N) theta_z[n] ~ normal(0,1);
 
   // Sample from data
@@ -86,7 +91,7 @@ generated quantities{
   vector[G] theta_gen_geneWise[N];
 
   // Sample gene wise rates
-  for(g in 1:G) lambda_gen[g] = normal_or_gammaLog_rng(lambda_mu, lambda_sigma, is_prior_asymetric);
+  for(g in 1:G) lambda_gen[g] = normal_or_gammaLog_rng(lambda_prior, is_prior_asymetric);
   for(n in 1:N) for(g in 1:G) theta_gen_naive[n,g] = normal_rng(lambda_gen[g],sigma[g]);
   for(n in 1:N) for(g in 1:G) theta_gen_geneWise[n,g] = normal_rng(lambda[g],sigma[g]);
 
