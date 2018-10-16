@@ -25,7 +25,7 @@ registerDoParallel()
 rstan_options(auto_write = TRUE)
 options(mc.cores = parallel::detectCores())
 
-devtools::load_all()
+devtools::install(quick = TRUE) #The PKG needs to be installed for sampling_multi to work
 ```
 
 Setting global variables
@@ -53,7 +53,7 @@ if(!file.exists(temp_file_counts)) {
 if(recompute_counts_tidy) {
   # Import gene transcription data set
   counts_tidy =
-    read_csv(here("data", "tibble_TCGA_files", paste0(counts_source, ".csv"))) %>%
+    read_csv(here("big_data", "tibble_TCGA_files", paste0(counts_source, ".csv"))) %>%
     filter(sample %in% ( (.) %>% distinct(sample) %>% head(n=N) %>% pull(sample)) ) %>%
     filter(ens_iso %in% ( (.) %>% distinct(ens_iso) %>% head(n=G) %>% pull(ens_iso)) ) %>%
     mutate_if(is.character, as.factor) %>%
@@ -162,7 +162,27 @@ models =
   setNames(model_names)
 ```
 
-Run all models
+Run all models - MARTIN
+
+```{r}
+data_list = list()
+control_list = list()
+for(i in 1:length(models)) {
+  data_list[[i]] = data_for_stan
+  control_list[[i]] = list(
+        max_treedepth = switch(
+          model_names[i],
+          "logNormal_multinomial" = 12,
+          "logStudent_multinomial" = 13,
+          10
+        ))
+}
+
+fits = sampling_multi(models, data_list, control_per_item = control_list) %>%
+  setNames(model_names)
+```
+
+Run all models - STEFANO
 
 ```{r}
 
@@ -227,7 +247,7 @@ Plot abundance estimates
 generated_quant =
   foreach(fit = fits, model_name = fits %>% names, .combine = bind_rows) %dopar% {
     library(dplyr) #On Windows, %dopar%-ed code does not share the main session
-    library(tidybayes) #On Windows, %dopar%-ed code does not share the main session
+    library(tidybayes)
     fit %>%
       gather_samples(counts_gen_naive[sample_idx, ens_iso_idx], counts_gen_geneWise[sample_idx, ens_iso_idx]) %>%
       ungroup() %>%
