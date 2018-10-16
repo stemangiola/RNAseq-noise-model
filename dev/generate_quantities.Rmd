@@ -162,7 +162,7 @@ models =
   setNames(model_names)
 ```
 
-Run all models
+Run all models - MARTIN
 
 ```{r}
 data_list = list()
@@ -180,39 +180,43 @@ for(i in 1:length(models)) {
 
 fits = sampling_multi(models, data_list, control_per_item = control_list) %>%
   setNames(model_names)
+```
 
-# fits = 
-#   foreach(model = models, model_name = models %>% names, .combine = c) %:%
-#   foreach(is_prior_asymetric = c(0,1), .combine = c) %do% {
-# 
-#     # Trick for naming list
-#     my_list = list()
-#     my_list[[sprintf("%s_asymmetric-%s", model_name, is_prior_asymetric)]] =
-#       sampling_check_return(
-#         model,
-#         data =
-#           data_for_stan %>%
-#           lplyr::mutate(is_prior_asymetric = is_prior_asymetric),
-#         control = list(
-#           max_treedepth = switch(
-#             model_name,
-#             "logNormal_multinomial" = 12,
-#             "logStudent_multinomial" = 13,
-#             10
-#           )
-#         )
-#       )
-# 
-#     # Return
-#     my_list
-#   }
+Run all models - STEFANO
+
+```{r}
+fits =
+  foreach(model = models, model_name = models %>% names, .combine = c) %:%
+  foreach(is_prior_asymetric = c(0,1), .combine = c) %do% {
+
+    # Trick for naming list
+    my_list = list()
+    my_list[[sprintf("%s_asymmetric-%s", model_name, is_prior_asymetric)]] =
+      sampling_check_return(
+        model,
+        data =
+          data_for_stan %>%
+          lplyr::mutate(is_prior_asymetric = is_prior_asymetric),
+        control = list(
+          max_treedepth = switch(
+            model_name,
+            "logNormal_multinomial" = 12,
+            "logStudent_multinomial" = 13,
+            10
+          )
+        )
+      )
+
+    # Return
+    my_list
+  }
 
 # Fit a single model
-fits$`negBinomial_a-1_v-50` =
+fits$`logNormal_multinomial_asymmetric-1` =
   sampling_check_return(
-     stan_model(here("stan",sprintf("%s.stan", "negBinomial"))),
-    data = data_for_stan,
-    control = list( max_treedepth = 10)
+     stan_model(here("stan",sprintf("%s.stan", "logNormal_multinomial"))),
+    data = data_for_stan %>% lplyr::mutate(is_prior_asymetric = 1),
+    control = list( max_treedepth = 12)
 )
 ```
 
