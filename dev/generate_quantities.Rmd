@@ -32,12 +32,12 @@ Setting global variables
 
 ```{r}
 
-N = 20 
-G = 50 
+N = 20
+G = 50
 counts_source = "Acute_Myeloid_Leukemia_Primary_Blood_Derived_Cancer_-_Peripheral_Blood"
 
 # Evaluate whether to recompute input data frame
-temp_file_counts = here("local_temp_data",paste0("subset_", counts_source,".rds")) 
+temp_file_counts = here("local_temp_data",paste0("subset_", counts_source,".rds"))
 if(!file.exists(temp_file_counts)) {
   recompute_counts_tidy = TRUE
 } else {
@@ -57,48 +57,24 @@ if(recompute_counts_tidy) {
     filter(sample %in% ( (.) %>% distinct(sample) %>% head(n=N) %>% pull(sample)) ) %>%
     filter(ens_iso %in% ( (.) %>% distinct(ens_iso) %>% head(n=G) %>% pull(ens_iso)) ) %>%
     mutate_if(is.character, as.factor) %>%
-  
+
     # Add numerical indexes
     left_join(
-      (.) %>% 
-        distinct(ens_iso) %>% 
-        arrange(ens_iso) %>% 
+      (.) %>%
+        distinct(ens_iso) %>%
+        arrange(ens_iso) %>%
         mutate(ens_iso_idx = 1:n())
     ) %>%
     left_join(
-      (.) %>% 
-        distinct(sample) %>% 
-        arrange(sample) %>% 
+      (.) %>%
+        distinct(sample) %>%
+        arrange(sample) %>%
         mutate(sample_idx = 1:n())
     )
-  
+
   counts_data = list(N = N, G = G, counts_tidy = counts_tidy)
   saveRDS(counts_data, file = temp_file_counts)
 }
-```
-
-```{r}
-# Produce input for Stan
-data_for_stan = list(
-  N = N, 
-  G = G,
-  counts =
-    counts_tidy %>%
-    select(ens_iso,`read count`,sample) %>%
-    spread(ens_iso, `read count`) %>%
-    select(-sample) %>%
-    as.matrix(),
-  
-  # Info on data set
-  my_prior = c(0,5),
-  omit_data = 0,
-  exposure = 
-    counts_tidy %>% 
-    group_by(sample) %>% 
-    summarise(`Total counts` = sum(`read count`)) %>% 
-    pull(`Total counts`),
-  use_lambda_mu = 1
-)
 ```
 
 Wrappers and utilities
@@ -134,17 +110,39 @@ my_theme =
 
 ```
 
+```{r}
+data_for_stan = list(
+  N = N,
+  G = G,
+  counts =
+    counts_tidy %>%
+    select(ens_iso,`read count`,sample) %>%
+    spread(ens_iso, `read count`) %>%
+    select(-sample) %>%
+    as.matrix(),
+
+  # Info on data set
+  my_prior = c(0,5),
+  omit_data = 0,
+  exposure =
+    counts_tidy %>%
+    group_by(sample) %>%
+    summarise(`Total counts` = sum(`read count`)) %>%
+    pull(`Total counts`)
+)
+```
+
 Set model names
 
 ```{r}
-# model_names = 
+# model_names =
 #   dir(path = here("stan"), pattern = ".stan") %>%
 #   gsub("\\.stan", "", .)
 model_names = c(
-  "negBinomial", 
-  "multinomial", 
-  "dirichlet_multinomial", 
-  "logNormal_multinomial", 
+  "negBinomial",
+  "multinomial",
+  "dirichlet_multinomial",
+  "logNormal_multinomial",
   "logStudent_multinomial"
   )
 
@@ -153,16 +151,16 @@ model_names = c(
 Compile all models
 
 ```{r, echo=FALSE}
-models = 
+models =
   foreach(model_name = model_names) %dopar% {
     library(rstan) #On Windows, %dopar%-ed code does not share the main session
     library(here) #On Windows, %dopar%-ed code does not share the main session
     stan_model(here("stan",sprintf("%s.stan", model_name)))
-  } %>% 
+  } %>%
   setNames(model_names)
 ```
 
-Run all models
+Run all models - MARTIN
 
 ```{r}
 data_list = list()
@@ -171,32 +169,63 @@ for(i in 1:length(models)) {
   data_list[[i]] = data_for_stan
   control_list[[i]] = list(
         max_treedepth = switch(
-          model_names[i], 
-          "logNormal_multinomial" = 12, 
-          "logStudent_multinomial" = 13, 
+          model_names[i],
+          "logNormal_multinomial" = 12,
+          "logStudent_multinomial" = 13,
           10
-        )) 
+        ))
 }
 
-fits = sampling_multi(models, data_list, control_per_item = control_list) %>% 
+fits = sampling_multi(models, data_list, control_per_item = control_list) %>%
   setNames(model_names)
+```
 
-# # Fit a single model
-# fits$negBinomial = sampling_check_return(
-#       models$negBinomial,
-#       data = data_for_stan,
-#       control = list( max_treedepth = 12)
-# )
+Run all models - STEFANO
+
+```{r}
+fits =
+  foreach(model = models, model_name = models %>% names, .combine = c) %:%
+  foreach(is_prior_asymetric = c(0,1), .combine = c) %do% {
+
+    # Trick for naming list
+    my_list = list()
+    my_list[[sprintf("%s_asymmetric-%s", model_name, is_prior_asymetric)]] =
+      sampling_check_return(
+        model,
+        data =
+          data_for_stan %>%
+          lplyr::mutate(is_prior_asymetric = is_prior_asymetric),
+        control = list(
+          max_treedepth = switch(
+            model_name,
+            "logNormal_multinomial" = 12,
+            "logStudent_multinomial" = 13,
+            10
+          )
+        )
+      )
+
+    # Return
+    my_list
+  }
+
+# Fit a single model
+fits$`logNormal_multinomial_asymmetric-1` =
+  sampling_check_return(
+     stan_model(here("stan",sprintf("%s.stan", "logNormal_multinomial"))),
+    data = data_for_stan %>% lplyr::mutate(is_prior_asymetric = 1),
+    control = list( max_treedepth = 12)
+)
 ```
 
 
 Get generated quantities
 
 ```{r}
-generated_quant = 
+generated_quant =
   foreach(fit = fits, model_name = fits %>% names, .combine = bind_rows) %dopar% {
     library(dplyr) #On Windows, %dopar%-ed code does not share the main session
-    library(tidybayes) 
+    library(tidybayes)
     fit %>%
       gather_samples(counts_gen_naive[sample_idx, ens_iso_idx], counts_gen_geneWise[sample_idx, ens_iso_idx]) %>%
       ungroup() %>%
@@ -207,7 +236,7 @@ generated_quant =
 
 ```
 
-Plots 
+Plots
 
 ```{r}
 
@@ -216,7 +245,7 @@ generated_quant %>%
   gather(`Source`, `Read count`, c("Observed", "Estimated")) %>%
   filter(.iteration %in% 1:50 & .chain %in% 1) %>%
   mutate(term = gsub("counts_gen_", "", term)) %>%
-  
+
   # Plot
   {
     (.) %>%
@@ -226,9 +255,13 @@ generated_quant %>%
     scale_x_log10() +
     scale_color_brewer(palette = "Set1") +
     my_theme +
-    ggtitle("Overall read count distribution") 
+    theme(
+    strip.text.y = element_text(angle = 0),
+    strip.text.x = element_text(angle = 90, size=8)
+    ) +
+    ggtitle("Overall read count distribution")
   } %>%
-  
+
   # Save plot
   {
     ggsave(plot = (.), here("dev", "overall_read_count_distribution.png"))
@@ -256,16 +289,14 @@ generated_quant %>%
       strip.text.y = element_text(angle = 0),
       strip.text.x = element_text(angle = 90, size=8)
     ) +
-    ggtitle("Gene-wise read count distribution") 
+    ggtitle("Gene-wise read count distribution")
   } %>%
-  
+
   # Save plot
   {
     ggsave(plot = (.), here("dev", "gene_wise_read_count_distribution.png"), width=29, height=21, units = "cm")
     (.)
   }
-  
+
 
 ```
-
-

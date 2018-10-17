@@ -1,35 +1,36 @@
+functions{
+	real gamma_log_lpdf(vector x_log, real a, real b){
 
-functions {
-// Generate a vector of size N that sums to zero and marginal
-// distributions for all elements are N(0,1)
-// Original code due to andre.pfeuffer
-// https://discourse.mc-stan.org/t/test-soft-vs-hard-sum-to-zero-constrain-choosing-the-right-prior-for-soft-constrain/3884/31
+    // This function is the  probability of the log gamma funnction
+    // in case you have data that is aleady in log form
 
-   vector Q_sum_to_zero_QR(int N) {
-    vector [2*N] Q_r;
-    real scale = 1/sqrt(1-inv(N));
+		vector[rows(x_log)] jacob = x_log; //jacobian
+		real norm_constant = a * log(b) -lgamma(a);
+		real a_minus_1 = a-1;
+		return sum( jacob ) + norm_constant * rows(x_log) + sum(  x_log * a_minus_1 - exp(x_log) * b ) ;
 
-    for(i in 1:N) {
-      Q_r[i] = -sqrt((N-i)/(N-i+1.0)) * scale;
-      Q_r[i+N] = inv_sqrt((N-i) * (N-i+1)) * scale;
-    }
-    return Q_r;
-  }
+	}
 
-  vector sum_to_zero_QR(vector x_raw, vector Q_r) {
-    int N = num_elements(x_raw) + 1;
-    vector [N] x;
-    real x_aux = 0;
+	real normal_or_gammaLog_lpdf(vector x_log, real a, real b, int is_prior_asymetric){
+	  // This function takes care of the two prior choice
+	  // without complicating too much the model itself
+    real lpdf;
+	  if(is_prior_asymetric == 1) lpdf = gamma_log_lpdf(x_log | a, b);
+	  else lpdf = normal_lpdf(x_log | 0, b);
 
-    for(i in 1:N-1){
-      x[i] = x_aux + x_raw[i] * Q_r[i];
-      x_aux = x_aux + x_raw[i] * Q_r[i+N];
-    }
-    x[N] = x_aux;
-    return x;
-  }
+	  return lpdf;
+	}
+
+	 real normal_or_gammaLog_rng(real a, real b, int is_prior_asymetric){
+	  // This function takes care of the two prior choice
+	  // without complicating too much the model itself
+    real rng;
+	  if(is_prior_asymetric == 1) rng = log(gamma_rng(a, b));
+	  else rng = normal_rng(0, b);
+
+	  return rng;
+	}
 }
-
 data {
   int<lower=0> N;
   int<lower=0> G;
@@ -41,12 +42,14 @@ data {
   real<lower=0> sigma_prior_sigma;
 }
 
-transformed data {
-  vector[2*G] Q_r = Q_sum_to_zero_QR(G);
+  // Alternative models
+  int<lower=0, upper=1> is_prior_asymetric;
+
 }
 
 parameters {
   // Overall properties of the data
+  real<lower=0> lambda_mu; // So is compatible with logGamma prior
   real<lower=0> lambda_sigma;
 
   // Gene-wise properties of the data
@@ -60,14 +63,12 @@ transformed parameters {
 model {
 
   // Overall properties of the data
-  lambda_mu ~ normal(0,5);
-  if(sigma_prior_type == 0) {
-    lambda_sigma ~ cauchy(0, sigma_prior_sigma);
-  } else {
-    lambda_sigma ~ normal(0, sigma_prior_sigma);
-  }
+  lambda_mu ~ normal(0,1);
+  lambda_sigma ~ normal(0,2);
 
-  lambda_raw ~ normal(0,1);
+  // Gene-wise properties of the data
+  sum(lambda) ~ normal(0,0.01 * G);
+  lambda ~ normal_or_gammaLog(lambda_mu, lambda_sigma, is_prior_asymetric);
 
   // Sample from data
   if(omit_data==0) for(n in 1:N) counts[n,] ~ multinomial(softmax(lambda));
@@ -80,7 +81,7 @@ generated quantities{
   vector[G] lambda_gen;
 
   // Sample gene wise rates
-  for(g in 1:G) lambda_gen[g] = normal_rng(0, lambda_sigma);
+  for(g in 1:G) lambda_gen[g] = normal_or_gammaLog_rng(lambda_mu, lambda_sigma, is_prior_asymetric);
 
   // Sample gene wise sample wise abundances
   for(n in 1:N) {

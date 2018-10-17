@@ -45,3 +45,4 @@ dev/Thumbs.db
 *.rds
 
 local_temp_data/*
+data/*
