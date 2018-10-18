@@ -31,6 +31,7 @@ functions{
 	  return rng;
 	}
 }
+
 data {
   int<lower=0> N;
   int<lower=0> G;
@@ -38,13 +39,17 @@ data {
   real my_prior[2];
   int<lower=0, upper=1> omit_data;
   int<lower=0> exposure[N];
-  int<lower=0, upper=1> sigma_prior_type;
-  real<lower=0> sigma_prior_sigma;
-}
 
   // Alternative models
   int<lower=0, upper=1> is_prior_asymetric;
 
+  int<lower=0, upper=1> generate_quantities;
+
+}
+
+transformed data {
+  int<lower=0> N_gen = generate_quantities ? N : 0;
+  int<lower=0> G_gen = generate_quantities ? G : 0;
 }
 
 parameters {
@@ -53,13 +58,8 @@ parameters {
   real<lower=0> lambda_sigma;
 
   // Gene-wise properties of the data
-  vector[G - 1] lambda_raw;
+  vector[G] lambda;
 }
-
-transformed parameters {
-  vector[G] lambda = sum_to_zero_QR(lambda_raw, Q_r) * lambda_sigma;
-}
-
 model {
 
   // Overall properties of the data
@@ -75,19 +75,20 @@ model {
 
 }
 generated quantities{
-  int<lower=0> counts_gen_naive[N,G];
-  int<lower=0> counts_gen_geneWise[N,G];
+  int<lower=0> counts_gen_naive[N_gen,G_gen];
+  int<lower=0> counts_gen_geneWise[N_gen,G_gen];
 
-  vector[G] lambda_gen;
+  vector[G_gen] lambda_gen;
 
-  // Sample gene wise rates
-  for(g in 1:G) lambda_gen[g] = normal_or_gammaLog_rng(lambda_mu, lambda_sigma, is_prior_asymetric);
+  if(generate_quantities) {
+    // Sample gene wise rates
+    for(g in 1:G) lambda_gen[g] = normal_or_gammaLog_rng(lambda_mu, lambda_sigma, is_prior_asymetric);
 
-  // Sample gene wise sample wise abundances
-  for(n in 1:N) {
-    counts_gen_naive[n,] = multinomial_rng(softmax(lambda_gen), exposure[n]);
-    counts_gen_geneWise[n,] = multinomial_rng(softmax(lambda), exposure[n]);
+    // Sample gene wise sample wise abundances
+    for(n in 1:N) {
+      counts_gen_naive[n,] = multinomial_rng(softmax(lambda_gen), exposure[n]);
+      counts_gen_geneWise[n,] = multinomial_rng(softmax(lambda), exposure[n]);
+    }
   }
-
 
 }
