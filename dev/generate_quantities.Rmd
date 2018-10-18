@@ -25,7 +25,7 @@ registerDoParallel()
 rstan_options(auto_write = TRUE)
 options(mc.cores = parallel::detectCores())
 
-devtools::install(quick = TRUE) #The PKG needs to be installed for sampling_multi to work
+devtools::load_all()
 ```
 
 Setting global variables
@@ -124,6 +124,8 @@ data_for_stan = list(
   # Info on data set
   my_prior = c(0,5),
   omit_data = 0,
+  generate_quantities = 1,
+  is_prior_asymetric = 0,
   exposure =
     counts_tidy %>%
     group_by(sample) %>%
