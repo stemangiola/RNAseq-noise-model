@@ -163,19 +163,11 @@ generate_data_nb_multinomial <- function(G, sums, lambda_raw_sigma,  phi_given =
 
 }
 
-generate_data_multinomial <- function(G, sums, sigma_prior_type = "cauchy", sigma_prior_sigma = 2, use_lambda_mu = FALSE) {
+generate_data_multinomial <- function(G, sums, sigma_prior_sigma = 2) {
 
   N = length(sums)
 
-  if(sigma_prior_type == "cauchy") {
-    lambda_sigma <- abs(rcauchy(1, 0, sigma_prior_sigma))
-    sigma_prior_type_int = 0
-  } else if(sigma_prior_type == "normal") {
-    lambda_sigma <- abs(rnorm(1, 0, sigma_prior_sigma))
-    sigma_prior_type_int = 1
-  } else {
-    stop("Invlaid sigma_prior_type")
-  }
+  lambda_sigma <- abs(rnorm(1, 0, sigma_prior_sigma))
 
   lambda <- rnorm_sum_to_zero(G) * lambda_sigma
 
@@ -192,12 +184,58 @@ generate_data_multinomial <- function(G, sums, sigma_prior_type = "cauchy", sigm
       my_prior = c(0,0),
       omit_data = 0,
       exposure = rowSums(counts),
-      sigma_prior_type = sigma_prior_type_int,
-      sigma_prior_sigma = sigma_prior_sigma
+      is_prior_asymetric = 0,
+      generate_quantities = 0
     ),
     true = list(
       lambda_sigma = lambda_sigma,
       lambda = lambda
+    )
+  )
+}
+
+generate_data_lognormal_multinomial <- function(G, sums, is_prior_assymetric = FALSE) {
+  N = length(sums)
+
+
+  lambda_prior <- abs(rnorm(1,0,1))
+  sigma <- abs(rnorm(1,0,1))
+
+  if(!is_prior_assymetric) {
+    lambda <- rnorm_sum_to_zero(G) * lambda_prior
+  } else {
+    gamma_b <- exp(digamma(lambda_prior))
+    lambda <- log(rgamma(G, lambda_prior, gamma_b)) %>% enforce_soft_sum_to_zero()
+  }
+
+
+  counts = array(-1, c(N, G))
+  theta_z = array(-1, c(N, G))
+  for(n in 1:N) {
+    #theta_z[n, ] <- rnorm_sum_to_zero(G)
+    #theta_z[n,] <- rnorm(G, 0, 1)
+    theta_z[n,] <- rnorm(G, 0, 1) %>% enforce_soft_sum_to_zero()
+    theta <- lambda + theta_z * sigma
+    counts[n, ] = rmultinom(1, sums[n], softmax(lambda))
+  }
+
+  data = list(
+    observed = list(
+      N = N,
+      G = G,
+      counts = counts,
+      my_prior = c(0,0),
+      omit_data = 0,
+      exposure = rowSums(counts),
+      is_prior_asymetric = if(is_prior_assymetric) {1} else {0},
+      generate_quantities = 0
+    ),
+    true = list(
+      lambda_prior = lambda_prior,
+      sigma = sigma,
+      #theta_z = theta_z,
+      #lambda = lambda,
+      theta = theta
     )
   )
 }

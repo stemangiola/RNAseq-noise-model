@@ -57,3 +57,15 @@ rnorm_sum_to_zero = function(N) {
   x[N] = x_aux
   x
 }
+
+enforce_soft_sum_to_zero = function(x, sum_sd = length(x) * 0.001) {
+  assumed_sum = rnorm(1, 0, sum_sd)
+
+  #Distribute the remainder equally
+  sum_change = assumed_sum - sum(x)
+
+  #Pick random points on the interval to form split points
+  splits = c(0, sort(runif(length(x) - 1,0, abs(sum_change))), abs(sum_change))
+
+  x + sign(sum_change) * diff(splits)
+}
