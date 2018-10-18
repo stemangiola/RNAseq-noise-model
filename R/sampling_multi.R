@@ -24,7 +24,7 @@
 #'   to each fit.
 sampling_multi <- function(models, data, map_fun = sampling_multi_noop, combine_fun = sflist2stanfit, chains = 4, cores = parallel::detectCores(),
                            init = NULL, control = NULL, init_per_item = NULL, control_per_item = NULL,
-                           map_fun_dependencies = c("RNASeqNoiseModel"),
+                           map_fun_dependencies = c(),
                            R_session_init_expr = NULL,
                            ids_to_compute = 1:length(data),  ...) {
 
@@ -87,10 +87,13 @@ sampling_multi <- function(models, data, map_fun = sampling_multi_noop, combine_
     dirname(system.file(package = d))
   })))
   .paths <- .paths[.paths != ""]
-  parallel::clusterExport(cl, varlist = ".paths", envir = environment())
+  parallel::clusterExport(cl, varlist = c(".paths","dependencies"), envir = environment())
   parallel::clusterEvalQ(cl, expr = .libPaths(.paths))
   parallel::clusterEvalQ(cl, expr =
-                           suppressPackageStartupMessages(require(rstan, quietly = TRUE)))
+                           for(dep in dependencies) {
+                             suppressPackageStartupMessages(require(dep, quietly = TRUE, character.only = TRUE))
+                           }
+                         )
 
   parallel::clusterExport(cl, varlist = ".dotlists_per_item", envir = environment())
 

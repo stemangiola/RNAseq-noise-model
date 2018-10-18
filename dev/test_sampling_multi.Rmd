@@ -4,9 +4,11 @@ output: html_notebook
 ---
 
 ```{r setup}
+#devtools::install(quick = TRUE,build_vignettes = FALSE)
+devtools::load_all()
+
 library(rstan)
 rstan_options(auto_write = TRUE)
-devtools::install(quick = TRUE,build_vignettes = FALSE)
 library(tidyverse)
 library(RNASeqNoiseModel)
 

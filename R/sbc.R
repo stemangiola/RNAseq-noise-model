@@ -1,10 +1,18 @@
 sbc <- function(model, generator, N_steps, ...) {
-  1:N_steps %>% map_dfr(function(x) {
+  true_list <- list()
+  observed_list <- list()
+  for(i in 1:N_steps) {
     data <- generator()
-    fit <- rstan::sampling(model, data = data$observed, ...)
-    samples <- rstan::extract(fit, pars = names(data$true))
-    eval <- evaluate_all_params(samples, data$true)
-    eval %>% mutate(run = x)
+    true_list[[i]] <- data$true
+    observed_list[[i]] <- data$observed
+  }
+
+  fits <- sampling_multi(model, observed_list, ...)
+
+  fits %>% imap_dfr(function(fit, data_id) {
+    samples <- rstan::extract(fit, pars = names(true_list[[data_id]]))
+    eval <- evaluate_all_params(samples, true_list[[data_id]])
+    eval %>% mutate(run = data_id)
   })
 }
 
