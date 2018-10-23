@@ -24,8 +24,8 @@ registerDoParallel()
 
 rstan_options(auto_write = TRUE)
 options(mc.cores = parallel::detectCores())
-
-devtools::install(quick = TRUE) #The PKG needs to be installed for sampling_multi to work
+#Sys.setenv(USE_CXX14 = 1)
+#devtools::install(quick = TRUE) #The PKG needs to be installed for sampling_multi to work
 ```
 
 Setting global variables
@@ -33,7 +33,7 @@ Setting global variables
 ```{r}
 
 N = 20
-G = 50
+G = 100
 counts_source = "Acute_Myeloid_Leukemia_Primary_Blood_Derived_Cancer_-_Peripheral_Blood"
 
 # Evaluate whether to recompute input data frame
@@ -82,7 +82,7 @@ if(recompute_counts_tidy) {
 Wrappers and utilities
 
 ```{r}
-
+source(here("R", "evaluation_tools.R"))
 check_return = function(fit){
   fit %>% check_all_diagnostics()
   fit
@@ -154,7 +154,7 @@ Compile all models
 
 ```{r, echo=FALSE}
 models =
-  foreach(model_name = model_names) %dopar% {
+  foreach(model_name = model_names) %do% {
     library(rstan) #On Windows, %dopar%-ed code does not share the main session
     library(here) #On Windows, %dopar%-ed code does not share the main session
     stan_model(here("stan",sprintf("%s.stan", model_name)))
