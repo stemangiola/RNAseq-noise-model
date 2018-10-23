@@ -215,7 +215,7 @@ generate_data_lognormal_multinomial <- function(G, sums, is_prior_assymetric = F
     #theta_z[n, ] <- rnorm_sum_to_zero(G)
     #theta_z[n,] <- rnorm(G, 0, 1)
     theta_z[n,] <- rnorm(G, 0, 1) %>% enforce_soft_sum_to_zero()
-    theta <- lambda + theta_z * sigma
+    theta <- lambda + theta_z[n,] * sigma
     counts[n, ] = rmultinom(1, sums[n], softmax(lambda))
   }
 
@@ -236,6 +236,38 @@ generate_data_lognormal_multinomial <- function(G, sums, is_prior_assymetric = F
       #theta_z = theta_z,
       #lambda = lambda,
       theta = theta
+    )
+  )
+}
+
+generate_data_lognormal_test <- function(G, N) {
+  lambda_prior = 1 + abs(rnorm(1, 0, 1))
+  sigma = abs(rnorm(1, 0, 1))
+
+  lambda = rnorm(G, 0, lambda_prior)
+
+  theta_z = array(-1, c(N, G))
+  for(g in 1:G) {
+    theta_z[, g] <- rnorm_sum_to_zero(N)
+  }
+
+  direct_proportions = array(-1, c(N, G))
+  for(n in 1:N) {
+    theta <- lambda + theta_z[n, ] * sigma
+    direct_proportions[n, ] = rnorm(G, theta, 0.1)
+  }
+
+  data = list(
+    observed = list(
+      lambda_prior = lambda_prior,
+      N = N,
+      G = G,
+      direct_proportions = direct_proportions
+    ),
+    true = list(
+      sigma = sigma,
+      theta_z = theta_z,
+      lambda = lambda
     )
   )
 }
