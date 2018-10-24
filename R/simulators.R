@@ -271,3 +271,31 @@ generate_data_lognormal_test <- function(G, N) {
     )
   )
 }
+
+generate_data_lognormal_simpler_test <- function(G, N) {
+  sigma = abs(rnorm(1, 0, 1))
+
+  theta_z = array(-1, c(N, G))
+  for(g in 1:G) {
+    theta_z[, g] <- rnorm_sum_to_zero(N)
+    #theta_z[, g] <- rnorm(N, 0, 1)
+  }
+
+  direct_proportions = array(-1, c(N, G))
+  for(n in 1:N) {
+    theta <- theta_z[n, ] * sigma
+    direct_proportions[n, ] = rnorm(G, theta, 0.1)
+  }
+
+  data = list(
+    observed = list(
+      N = N,
+      G = G,
+      direct_proportions = direct_proportions
+    ),
+    true = list(
+      sigma = sigma,
+      theta_z = theta_z
+    )
+  )
+}
