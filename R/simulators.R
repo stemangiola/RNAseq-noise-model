@@ -1,50 +1,4 @@
-#' Simulate resampling count data - given counts of various items, each item is given
-#' equal probability to be sampled.
-#' @param draw A vector of item counts
-#' @param k Number of items to be selected
-resample_draw = function(draw, k) {
-  if(k >= sum(draw)) {
-    stop("The number reads to sample (k) has to be smaller than the sum of draw")
-  }
-  G = length(draw)
-  positions = c(0, cumsum(draw))
-  read_set = array(-1, sum(draw))
-  for(g in 1:G) {
-    read_set[(positions[g] + 1):positions[g + 1]] = g
-  }
 
-  sampling_result = sample(read_set, k)
-
-  counts = array(-1, G)
-  for(g in 1:G) {
-    counts[g] = sum(sampling_result == g)
-  }
-
-  counts
-}
-
-#' Generate a vector of size N that sums to zero and marginal
-#' distributions for all elements are N(0,1)
-#' Original code due to andre.pfeuffer
-#' https://discourse.mc-stan.org/t/test-soft-vs-hard-sum-to-zero-constrain-choosing-the-right-prior-for-soft-constrain/3884/31
-rnorm_sum_to_zero = function(N) {
-  Q_r = numeric(2 * N)
-  for(i in 1:N) {
-    Q_r[i] = -sqrt((N-i)/(N-i + 1))
-    Q_r[i+N] = 1/sqrt((N - i) * (N - i + 1))
-  }
-
-  x_raw = rnorm(N - 1, 0, 1/sqrt(1-1/N))
-  x = numeric(N)
-  x_aux = 0
-
-  for(i in 1:(N-1)) {
-    x[i] = x_aux + x_raw[i] * Q_r[i]
-    x_aux = x_aux + x_raw[i] * Q_r[i + N]
-  }
-  x[N] = x_aux
-  x
-}
 
 #' @param generator_type either "dm" or "nb_resample" (should be equivalent in practice, but this lets us test)
 #' @param model_type either "dm" or "nb" which tells the Stan model which method to use (once again should be equivalent but this lets us test numerical and other issues)
@@ -156,18 +110,17 @@ single_draw_nb_resample <- function(lambda, k, phi, num_trials = 100) {
   resample_draw(raw_counts_draw, k)
 }
 
-generate_data_nb_multinomial <- function(G, sums, lambda_raw_prior,  phi_given = TRUE, alpha_given = TRUE,
+generate_data_nb_multinomial <- function(G, sums, lambda_raw_sigma,  phi_given = TRUE, alpha_given = TRUE,
                                                      alpha_prior_log_mean = 3, alpha_prior_log_sd = 1,
                                                      phi_prior_log_mean = log(5), phi_prior_log_sd = 1) {
   N = length(sums)
   counts = array(-1, c(N, G))
 
   #lambda_raw = MCMCpack::rdirichlet(1, rep(lambda_raw_prior,G))
-  lambda_raw = rlnorm(G, 0, lambda_raw_prior)
-  lambda_raw = lambda_raw / sum(lambda_raw)
+  lambda_raw = softmax(rnorm_sum_to_zero(G) * lambda_raw_sigma)
 
   phi = rlnorm(1,phi_prior_log_mean, phi_prior_log_sd)
-  alpha = rlnorm(1, alpha_prior_log_mean, alpha_prior_log_sd)
+  alpha = 1 + rlnorm(1, alpha_prior_log_mean, alpha_prior_log_sd)
 
   for(n in 1:N) {
     counts[n,] = single_draw_nb_resample(lambda_raw * sums[n] * alpha, sums[n], phi)
@@ -182,7 +135,7 @@ generate_data_nb_multinomial <- function(G, sums, lambda_raw_prior,  phi_given =
       phi_given = phi_given,
       alpha_data = if(alpha_given) { array(alpha, 1) } else {numeric(0)},
       alpha_given = alpha_given,
-      lambda_raw_prior = lambda_raw_prior
+      lambda_raw_sigma = lambda_raw_sigma
     ),
     true = list(lambda_raw = lambda_raw,
                 phi_param = if(!phi_given) { array(phi, 1) } else {numeric(0)},
@@ -208,4 +161,141 @@ generate_data_nb_multinomial <- function(G, sums, lambda_raw_prior,  phi_given =
 
   data
 
+}
+
+generate_data_multinomial <- function(G, sums, sigma_prior_sigma = 2) {
+
+  N = length(sums)
+
+  lambda_sigma <- abs(rnorm(1, 0, sigma_prior_sigma))
+
+  lambda <- rnorm_sum_to_zero(G) * lambda_sigma
+
+  counts = array(-1, c(N, G))
+  for(n in 1:N) {
+    counts[n, ] = rmultinom(1, sums[n], softmax(lambda))
+  }
+
+  data = list(
+    observed = list(
+      N = N,
+      G = G,
+      counts = counts,
+      my_prior = c(0,0),
+      omit_data = 0,
+      exposure = rowSums(counts),
+      is_prior_asymetric = 0,
+      generate_quantities = 0
+    ),
+    true = list(
+      lambda_sigma = lambda_sigma,
+      lambda = lambda
+    )
+  )
+}
+
+generate_data_lognormal_multinomial <- function(G, sums, is_prior_assymetric = FALSE) {
+  N = length(sums)
+
+
+  lambda_prior <- abs(rnorm(1,0,1))
+  sigma <- abs(rnorm(1,0,1))
+
+  if(!is_prior_assymetric) {
+    lambda <- rnorm_sum_to_zero(G) * lambda_prior
+  } else {
+    gamma_b <- exp(digamma(lambda_prior))
+    lambda <- log(rgamma(G, lambda_prior, gamma_b)) %>% enforce_soft_sum_to_zero()
+  }
+
+
+  counts = array(-1, c(N, G))
+  theta_z = array(-1, c(N, G))
+  for(n in 1:N) {
+    #theta_z[n, ] <- rnorm_sum_to_zero(G)
+    #theta_z[n,] <- rnorm(G, 0, 1)
+    theta_z[n,] <- rnorm(G, 0, 1) %>% enforce_soft_sum_to_zero()
+    theta <- lambda + theta_z[n,] * sigma
+    counts[n, ] = rmultinom(1, sums[n], softmax(lambda))
+  }
+
+  data = list(
+    observed = list(
+      N = N,
+      G = G,
+      counts = counts,
+      my_prior = c(0,0),
+      omit_data = 0,
+      exposure = rowSums(counts),
+      is_prior_asymetric = if(is_prior_assymetric) {1} else {0},
+      generate_quantities = 0
+    ),
+    true = list(
+      lambda_prior = lambda_prior,
+      sigma = sigma,
+      #theta_z = theta_z,
+      #lambda = lambda,
+      theta = theta
+    )
+  )
+}
+
+generate_data_lognormal_test <- function(G, N) {
+  lambda_prior = 1 + abs(rnorm(1, 0, 1))
+  sigma = abs(rnorm(1, 0, 1))
+
+  lambda = rnorm(G, 0, lambda_prior)
+
+  theta_z = array(-1, c(N, G))
+  for(g in 1:G) {
+    theta_z[, g] <- rnorm_sum_to_zero(N)
+  }
+
+  direct_proportions = array(-1, c(N, G))
+  for(n in 1:N) {
+    theta <- lambda + theta_z[n, ] * sigma
+    direct_proportions[n, ] = rnorm(G, theta, 0.1)
+  }
+
+  data = list(
+    observed = list(
+      lambda_prior = lambda_prior,
+      N = N,
+      G = G,
+      direct_proportions = direct_proportions
+    ),
+    true = list(
+      sigma = sigma,
+      theta_z = theta_z,
+      lambda = lambda
+    )
+  )
+}
+
+generate_data_lognormal_simpler_test <- function(G, N) {
+  sigma = abs(rnorm(1, 0, 1))
+
+  theta_z = array(-1, c(N, G))
+  for(g in 1:G) {
+    theta_z[, g] <- rnorm_sum_to_zero(N)
+    #theta_z[, g] <- rnorm(N, 0, 1)
+  }
+
+  direct_proportions = array(-1, c(N, G))
+  for(n in 1:N) {
+    theta <- theta_z[n, ] * sigma
+    direct_proportions[n, ] = rnorm(G, theta, 0.1)
+  }
+
+  data = list(
+    observed = list(
+      N = N,
+      G = G,
+      direct_proportions = direct_proportions
+    ),
+    true = list(
+      sigma = sigma,
+      theta_z = theta_z
+    )
+  )
 }

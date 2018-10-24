@@ -23,8 +23,8 @@
 #'   `combine_fun` to each set of `chains` result of applying `map_fun`
 #'   to each fit.
 sampling_multi <- function(models, data, map_fun = sampling_multi_noop, combine_fun = sflist2stanfit, chains = 4, cores = parallel::detectCores(),
-                           init_per_item = NULL, control_per_item = NULL,
-                           map_fun_dependencies = c("RNASeqNoiseModel"),
+                           init = NULL, control = NULL, init_per_item = NULL, control_per_item = NULL,
+                           map_fun_dependencies = c(),
                            R_session_init_expr = NULL,
                            ids_to_compute = 1:length(data),  ...) {
 
@@ -33,34 +33,53 @@ sampling_multi <- function(models, data, map_fun = sampling_multi_noop, combine_
   cl <- parallel::makeCluster(cores, useXDR = FALSE)
   on.exit(parallel::stopCluster(cl))
 
-  fit_fun <- function(i) {
-    data_id <- floor( (i - 1) / chains) + 1
-    chain_id <- ((i - 1) %% chains) + 1
-    .dotlist$chain_id <- chain_id
-
+  #Prepare argument lists for all calls
+  .dotlists_per_item <- list()
+  for(data_id in 1:length(data)) {
     if(is.list(models)) {
       model = models[[data_id]]
     } else {
       model = models
     }
 
-    if(is.list(init_per_item)) {
-      .dotlist$init <- init_per_item[[data_id]]
-    }
-    if(is.list(control_per_item)) {
-      .dotlist$control <- control_per_item[[data_id]]
-    }
+    for(chain_id in 1:chains) {
 
-    if(is.list(.dotlist$init)) .dotlist$init <- .dotlist$init[chain_id]
+      .dotlist <- c(list(model, chains = 1L, cores = 0L), list(...))
 
-    .dotlist$data <- data[[data_id]]
-    out <- do.call(rstan::sampling, args = c(list(model),.dotlist))
+      if(is.list(init_per_item)) {
+        .dotlist$init <- init_per_item[[data_id]]
+        #TODO check that init is not set
+      } else {
+        .dotlist$init <- init
+      }
+
+      #Handle per-chain inits
+      if(is.list(.dotlist$init)) .dotlist$init <- .dotlist$init[chain_id]
+
+      if(is.list(control_per_item)) {
+        .dotlist$control <- control_per_item[[data_id]]
+        #TODO check that control is not set
+      } else {
+        .dotlist$control <- control
+      }
+
+      .dotlist$chain_id <- chain_id
+
+      .dotlist$data <- data[[data_id]]
+
+
+      .dotlists_per_item[[(data_id - 1) * chains + chain_id]] <- .dotlist
+    }
+  }
+
+
+  fit_fun <- function(i) {
+    out <- do.call(rstan::sampling, args = .dotlists_per_item[[i]])
 
     #TODO should catch error from map_fun
     map_fun(out, data_id, chain_id)
   }
 
-  .dotlist <- c(list(chains = 1L, cores = 0L), list(...))
 
 
   dependencies <- c("rstan", "Rcpp", map_fun_dependencies)
@@ -68,16 +87,18 @@ sampling_multi <- function(models, data, map_fun = sampling_multi_noop, combine_
     dirname(system.file(package = d))
   })))
   .paths <- .paths[.paths != ""]
-  parallel::clusterExport(cl, varlist = ".paths", envir = environment())
+  parallel::clusterExport(cl, varlist = c(".paths","dependencies"), envir = environment())
   parallel::clusterEvalQ(cl, expr = .libPaths(.paths))
   parallel::clusterEvalQ(cl, expr =
-                           suppressPackageStartupMessages(require(rstan, quietly = TRUE)))
+                           for(dep in dependencies) {
+                             suppressPackageStartupMessages(require(dep, quietly = TRUE, character.only = TRUE))
+                           }
+                         )
 
-  parallel::clusterExport(cl, varlist = ".dotlist", envir = environment())
+  parallel::clusterExport(cl, varlist = ".dotlists_per_item", envir = environment())
 
   parallel::clusterExport(cl, varlist =
-                            c("models", "data","init_per_item", "control_per_item",
-                              "map_fun", "R_session_init_expr"),
+                            c("map_fun", "R_session_init_expr"),
                           envir = environment())
 
   parallel::clusterEvalQ(cl, expr = R_session_init_expr)

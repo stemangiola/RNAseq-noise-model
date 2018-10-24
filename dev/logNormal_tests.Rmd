@@ -1,0 +1,85 @@
+---
+title: "Testing normal noise model"
+output: html_notebook
+---
+
+
+```{r setup}
+devtools::load_all()
+library(here)
+library(rstan)
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = TRUE)
+library(tidyverse)
+library(cowplot)
+
+```
+
+```{r}
+model = stan_model(here("stan","logNormal_tests.stan"))
+```
+
+```{r}
+N = 3
+G = 3
+data = generate_data_lognormal_test(G, N)
+fit = sampling(model, data = data$observed, control = list(adapt_delta = 0.9), chains = 1)
+evaluation_summary(fit, data$true)
+
+```
+
+```{r}
+N = 3
+G = 3
+N_steps = 1000
+
+generator <- function() { generate_data_lognormal_test(G, N) }
+sbc_res <- sbc(model, generator, N_steps = N_steps, control = list(adapt_delta = 0.9))
+plot_sbc_params(sbc_res$params %>% filter(!grepl("theta_z",param_name)), n_bins = 25)
+plot_sbc_params(sbc_res$params %>% filter(grepl("theta_z",param_name)), n_bins = 25)
+
+summarise_sbc_diagnostics(sbc_res)
+```
+
+```{r}
+is_divergent <- sbc_res$diagnostics$n_divergent > 0
+true_lambda_prior <- sbc_res$data %>% map_dbl(function(x) { x$lambda_prior}) 
+plot(true_lambda_prior, sbc_res$diagnostics$n_divergent)
+
+```
+
+# Even simpler
+
+```{r}
+model_simpler = stan_model(here("stan","logNormal_simpler_tests.stan"))
+```
+
+
+```{r}
+N = 3
+G = 3
+data_simpler = generate_data_lognormal_simpler_test(G, N)
+fit_simpler = sampling(model_simpler, data = data_simpler$observed)
+evaluation_summary(fit_simpler, data_simpler$true)
+
+```
+
+```{r}
+N = 3
+G = 3
+N_steps = 500
+
+generator_simpler <- function() { generate_data_lognormal_simpler_test(G, N) }
+sbc_res_simpler <- sbc(model_simpler, generator_simpler, N_steps = N_steps, control = list(adapt_delta = 0.95))
+plot_sbc_params(sbc_res_simpler$params, n_bins = 25)
+
+summarise_sbc_diagnostics(sbc_res_simpler)
+```
+
+```{r}
+is_divergent <- sbc_res_simpler$diagnostics$n_divergent > 0
+true_sigma <- sbc_res_simpler$true_values %>% map_dbl(function(x) { x$sigma}) 
+plot(true_sigma, sbc_res_simpler$diagnostics$n_divergent)
+
+```
+

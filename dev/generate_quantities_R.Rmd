@@ -7,20 +7,45 @@ output: html_notebook
 library(tidyverse)
 library(cowplot)
 devtools::load_all()
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = TRUE)
 
-n_plots_per_model = 10
+
+n_plots_per_model = 5
 N = 10
 G = 1000
 avg_reads_per_gene = 200
+sums = rep(avg_reads_per_gene * G, length.out = N)
 ```
 
 ```{r}
 plot_simulator_result = function(sim_result) {
-  sim_result$observed$counts %>% as.integer() %>% data.frame(counts = . + 0.5) %>%
-    ggplot(aes(counts)) + geom_histogram(bins = 30) + scale_x_log10()
+  sim_result$observed$counts %>% as.integer() %>% data.frame(counts = . + 1) %>%
+    ggplot(aes(counts)) + 
+    #geom_histogram(bins = 50) + 
+    stat_bin(geom = "step", position = "identity", bins=50) +
+    scale_x_log10()
 }
 ```
 
+
+## Multinomial
+
+```{r}
+for(i in 1:n_plots_per_model) {
+  generate_data_multinomial(G, sums = sums) %>%
+    plot_simulator_result() %>% print()
+}
+```
+
+Let's try a bit less expressive sigma prior
+
+```{r}
+for(i in 1:n_plots_per_model) {
+  generate_data_multinomial(G, sums = sums, sigma_gen = function() { rnorm(1,0,5)}) %>%
+    plot_simulator_result() %>% print()
+}
+```
 
 ## Dirichlet multinomial 
 
@@ -30,7 +55,7 @@ This is a different version, as captured in `stan/dirichlet_multinomial_base.sta
 
 
 for(i in 1:n_plots_per_model) {
-  generate_data_dirichlet_multinomial_base(G, sums = rep(avg_reads_per_gene * G, length.out = N), lambda_raw_prior = 2.5,
+  generate_data_dirichlet_multinomial_base(G, sums = sums, lambda_raw_prior = 2.5,
                                       alpha_prior_log_mean = log(2 * avg_reads_per_gene * G)) %>%
     plot_simulator_result() %>% print()
 }
@@ -41,11 +66,14 @@ for(i in 1:n_plots_per_model) {
 
 ```{r}
 for(i in 1:n_plots_per_model) {
-  data <- generate_data_nb_multinomial(G, sums = rep(avg_reads_per_gene * G, length.out = N), lambda_raw_prior = 2.5) 
+  data <- generate_data_nb_multinomial(G, sums = sums, lambda_raw_prior = 2.5) 
   data %>% plot_simulator_result() %>% print()
 }
 
 ```
+
+
+Test of the `rnorm_sum_to_zero` function.
 
 ```{r}
 n_samples <- 10000

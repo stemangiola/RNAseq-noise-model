@@ -1,5 +1,10 @@
 missing_arg <- function() quote(expr=)
 
+order_within_samples <- function(x, samples, n_samples = 99) {
+  thinned_samples <- sample(samples, n_samples)
+  sum(thinned_samples < x) + 1
+}
+
 evaluate_single_param_indices <- function(samples, param_name, indices, true_value) {
   if(is.null(indices)) {
     param_samples = samples[[param_name]];
@@ -23,7 +28,8 @@ evaluate_single_param_indices <- function(samples, param_name, indices, true_val
     true_value = true_value,
     median = median(param_samples),
     IQR = IQR(param_samples),
-    quantile = ecdf(param_samples)(true_value)
+    quantile = ecdf(param_samples)(true_value),
+    order_within = order_within_samples(true_value, param_samples)
     # mad = mad_val,
     # relative_mad = mad_val / true_value,
     # relative_rmse = rmse_val / true_value

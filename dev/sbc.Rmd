@@ -1,0 +1,60 @@
+---
+title: "SBC tests of models"
+output: html_notebook
+---
+
+```{r setup}
+devtools::load_all()
+library(here)
+library(rstan)
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = TRUE)
+library(tidyverse)
+library(cowplot)
+
+```
+
+```{r}
+model_multinomial = stan_model(here("stan","multinomial.stan"))
+model_lognormal_multinomial = stan_model(here("stan","logNormal_multinomial.stan"))
+model_nb_multinomial_approx = stan_model(here("stan","nb_multinomial_approx.stan"))
+```
+
+```{r}
+G = 5
+N = 10
+sums = G * 10 + rnbinom(N, mu = G * 50, size = 1) 
+N_steps = 1000
+
+generator <- function() { generate_data_multinomial(G, sums) }
+sbc_res_multinomial <- sbc(model_multinomial, generator, N_steps = N_steps, control = list(adapt_delta = 0.9))
+saveRDS(sbc_res_multinomial, here("local_temp_data",paste0("sbc_multinomial_",N_steps,".rds")))
+plot_sbc(sbc_res_multinomial, bi)
+```
+
+```{r}
+G = 5
+N = 10
+sums = G * 10 + rnbinom(N, mu = G * 50, size = 1) 
+N_steps = 50
+
+generator <- function() { generate_data_lognormal_multinomial(G, sums) }
+sbc_res_lognormal_multinomial <- sbc(model_lognormal_multinomial, generator, N_steps = N_steps, control = list(adapt_delta = 0.9, max_treedepth = 12), iter = 500)
+saveRDS(sbc_res_lognormal_multinomial, here("local_temp_data",paste0("sbc_lognormal_multinomial_",N_steps,".rds")))
+plot_sbc(sbc_res_lognormal_multinomial %>% filter(!grepl("theta_z",param_name)))
+plot_sbc(sbc_res_lognormal_multinomial %>% filter(grepl("theta_z\\[2,",param_name)))
+```
+
+
+
+```{r}
+G = 5
+N = 10
+sums = G * 10 + rnbinom(N, mu = G * 50, size = 1) 
+
+generator <- function() { generate_data_nb_multinomial(G, sums, lambda_raw_sigma = 2)}
+sbc_res <- sbc(model_nb_multinomial_approx, generator, 1000, control = list(adapt_delta = 0.9))
+plot_sbc(sbc_res)
+```
+
+
