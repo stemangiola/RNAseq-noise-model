@@ -74,3 +74,20 @@ data = generate_data_lognormal_multinomial(G, sums, is_prior_assymetric = TRUE)
 fit = sampling(model_lognormal_multinomial, data = data$observed, control = list(max_treedepth = 12, adapt_delta = 0.9), iter = 500)
 evaluation_summary(fit, data$true)
 ```
+
+# Gamma multinomial
+
+```{r}
+model_gamma_multinomial = stan_model(here("stan","gamma_multinomial.stan"))
+```
+
+```{r}
+G = 3
+N = 3
+sums = G * 10 + rnbinom(N, mu = G * 50, size = 1) 
+
+data = generate_data_gamma_multinomial(G, sums)
+fit = sampling(model_gamma_multinomial, data = data$observed)
+evaluation_summary(fit, data$true)
+```
+

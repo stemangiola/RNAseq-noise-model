@@ -96,14 +96,14 @@ single_draw_nb_resample <- function(lambda, k, phi, num_trials = 100) {
   G = length(lambda)
   for(i in 1:100) {
     raw_counts_draw = rnbinom(G, mu = lambda, size = phi)
-    if(sum(raw_counts_draw) >= num_trials) {
+    if(sum(raw_counts_draw) >= k) {
       break;
     }
     if(i == 5) {
       warning("Neded over 5 draws")
     }
   }
-  if(sum(raw_counts_draw) < num_trials) {
+  if(sum(raw_counts_draw) < k) {
     stop("Could not draw large enough")
   }
 
@@ -236,6 +236,35 @@ generate_data_lognormal_multinomial <- function(G, sums, is_prior_assymetric = F
       #theta_z = theta_z,
       #lambda = lambda,
       theta = theta
+    )
+  )
+}
+
+generate_data_gamma_multinomial <- function(G, sums) {
+  N = length(sums)
+
+  lambda = rnorm_sum_to_zero(G)
+  phi_raw = abs(rnorm(1, 0, 1))
+  phi = 1/sqrt(phi_raw)
+
+  alpha = sums * 10 / sum(exp(lambda))
+
+  counts = array(-1, c(N, G))
+  for(n in 1:N) {
+    #counts[n,] = rnbinom(G, mu = lambda, size = phi) %>% resample_draw(sums[n])
+    counts[n,] = single_draw_nb_resample(alpha * exp(lambda), sums[n], phi)
+  }
+
+  list(
+    observed = list(
+      N = N,
+      G = G,
+      alpha = alpha,
+      counts = counts
+    ),
+    true = list(
+      lambda = lambda,
+      phi = phi
     )
   )
 }
