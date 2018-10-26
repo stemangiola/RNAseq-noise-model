@@ -54,12 +54,13 @@ transformed data {
 parameters {
   real<lower=0> lambda_sigma;
   vector[G - 1] lambda_raw;
-  real<lower=0> phi_raw;
+  //real<lower=0> phi_raw_sigma;
+  vector<lower=0>[G] phi_raw;
   vector<lower=0>[G] theta[N];
 }
 
 transformed parameters {
-  real<lower=0> phi = 1/sqrt(phi_raw);
+  vector<lower=0>[G] phi = inv(sqrt(phi_raw));
   vector[G] lambda = sum_to_zero_QR(lambda_raw, Q_lambda) * lambda_sigma;
 }
 
@@ -98,7 +99,7 @@ generated quantities{
       vector[G] gamma_rate_gen = phi ./ exp(lambda_gen);
       for(g in 1:G) {
         for(n in 1:N) {
-          theta_gen[n, g] = gamma_rng(phi, gamma_rate_gen[g]);
+          theta_gen[n, g] = gamma_rng(phi[g], gamma_rate_gen[g]);
         }
       }
     }

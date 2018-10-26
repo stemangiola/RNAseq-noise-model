@@ -245,7 +245,8 @@ generate_data_gamma_multinomial <- function(G, sums) {
 
   lambda_sigma = abs(rnorm(1, 0, 2))
   lambda = rnorm_sum_to_zero(G) * lambda_sigma
-  phi_raw = abs(rnorm(1, 0, 1))
+  #phi_raw_sigma = rgamma(1, shape = 5, rate = 5)#abs(rnorm(1, 0, 2))
+  phi_raw = abs(rnorm(G, 0, 1))
   phi = 1/sqrt(phi_raw)
 
   excess = 50 #This should be irrelevant to the model
@@ -269,6 +270,7 @@ generate_data_gamma_multinomial <- function(G, sums) {
     true = list(
       lambda = lambda,
       lambda_sigma = lambda_sigma,
+      #phi_raw_sigma = phi_raw_sigma,
       phi = phi
       #excess = excess
     )

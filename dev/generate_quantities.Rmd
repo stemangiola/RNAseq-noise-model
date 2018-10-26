@@ -229,6 +229,12 @@ fits$`logNormal_multinomial_asymmetric-1` =
 )
 ```
 
+Show speed of the models
+
+```{r}
+fits %>% map_dbl(function(x) { sum(get_elapsed_time(x))})
+```
+
 
 Get generated quantities
 
@@ -261,7 +267,7 @@ generated_quant %>%
   {
     (.) %>%
     ggplot(aes(`Read count` + 1, color = Source)) +
-    stat_bin(geom = "step", position = "identity", bins=50) +
+    stat_bin(geom = "step", position = "identity", bins=50, alpha = 0.7) +
     facet_grid(term ~ model_name) +
     scale_x_log10() +
     scale_color_brewer(palette = "Set1") +
@@ -290,7 +296,7 @@ generated_quant %>%
   {
     (.) %>%
     ggplot(aes(`Read count` + 1, color = Source)) +
-    stat_bin(geom = "step", position = "identity", bins=50, size=0.2 ) +
+    stat_bin(geom = "step", position = "identity", bins=50, size=0.2, alpha = 0.7 ) +
     facet_grid(model_name ~ ens_iso) +
     scale_x_log10() +
     scale_color_brewer(palette = "Set1") +
