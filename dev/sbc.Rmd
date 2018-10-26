@@ -67,7 +67,7 @@ model_gamma_multinomial = stan_model(here("stan","gamma_multinomial.stan"))
 
 
 ```{r}
-G = 3
+G = 4
 N = 3
 sums = G * 10 + rnbinom(N, mu = G * 500, size = 1) 
 N_steps = 100

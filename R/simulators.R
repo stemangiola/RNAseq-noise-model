@@ -243,28 +243,34 @@ generate_data_lognormal_multinomial <- function(G, sums, is_prior_assymetric = F
 generate_data_gamma_multinomial <- function(G, sums) {
   N = length(sums)
 
-  lambda = rnorm_sum_to_zero(G)
+  lambda_sigma = abs(rnorm(1, 0, 2))
+  lambda = rnorm_sum_to_zero(G) * lambda_sigma
   phi_raw = abs(rnorm(1, 0, 1))
   phi = 1/sqrt(phi_raw)
 
-  alpha = sums * 10 / sum(exp(lambda))
+  excess = 50 #This should be irrelevant to the model
+
+  alpha = (sums * (1 + excess)) / sum(exp(lambda))
 
   counts = array(-1, c(N, G))
   for(n in 1:N) {
     #counts[n,] = rnbinom(G, mu = lambda, size = phi) %>% resample_draw(sums[n])
-    counts[n,] = single_draw_nb_resample(alpha * exp(lambda), sums[n], phi)
+    counts[n,] = single_draw_nb_resample(alpha[n] * exp(lambda), sums[n], phi)
   }
 
   list(
     observed = list(
       N = N,
       G = G,
-      alpha = alpha,
-      counts = counts
+      counts = counts,
+      omit_data = 0,
+      generate_quantities = 0
     ),
     true = list(
       lambda = lambda,
+      lambda_sigma = lambda_sigma,
       phi = phi
+      #excess = excess
     )
   )
 }
@@ -296,7 +302,7 @@ generate_data_lognormal_test <- function(G, N) {
     true = list(
       sigma = sigma,
       theta_z = theta_z,
-      lambda = lambda
+      lambda = lambdax
     )
   )
 }

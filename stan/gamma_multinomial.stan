@@ -34,36 +34,80 @@ data {
   int<lower=1> N;
   int<lower=1> G;
   int<lower=0> counts[N, G];
-  vector<lower=0>[G] alpha;
+  int<lower=0, upper=1> omit_data;
+  int<lower=0, upper=1> generate_quantities;
 }
 
 transformed data {
+  int<lower=0> N_gen = generate_quantities ? N : 0;
+  int<lower=0> G_gen = generate_quantities ? G : 0;
+
   vector[2*G] Q_lambda = Q_sum_to_zero_QR(G);
+  int<lower=1> exposure[N];
+
+  for(n in 1:N) {
+    exposure[n] = sum(counts[n,]);
+  }
 }
 
 
 parameters {
+  real<lower=0> lambda_sigma;
   vector[G - 1] lambda_raw;
-//  vector[G] lambda;
   real<lower=0> phi_raw;
   vector<lower=0>[G] theta[N];
 }
 
 transformed parameters {
   real<lower=0> phi = 1/sqrt(phi_raw);
-  vector[G] lambda = sum_to_zero_QR(lambda_raw, Q_lambda);
+  vector[G] lambda = sum_to_zero_QR(lambda_raw, Q_lambda) * lambda_sigma;
 }
 
 model {
+  vector[G] gamma_rate = phi ./ exp(lambda);
   for(n in 1:N) {
-    counts[n,] ~ multinomial(theta[n,] / sum(theta[n,]));
-  }
-  for(g in 1:G) {
-    theta[, g] ~ gamma(phi, phi / (alpha[g] * exp(lambda[g])));
+    if(omit_data == 0) {
+      counts[n,] ~ multinomial(theta[n,] / sum(theta[n,]));
+    }
+    theta[n,] ~ gamma(phi, gamma_rate);
   }
   phi_raw ~ normal(0, 1);
   lambda_raw ~ normal(0, 1);
+  lambda_sigma ~ normal(0, 2);
+}
 
-  // lambda ~ normal(0, 1);
-  // sum(lambda) ~ normal(0, 0.01 * G);
+generated quantities{
+  int<lower=0> counts_gen_naive[N_gen,G_gen];
+  int<lower=0> counts_gen_geneWise[N_gen,G_gen];
+
+  vector[G_gen] lambda_gen;
+
+  if(generate_quantities) {
+    // Sample gene wise rates
+    //for(g in 1:G) lambda_gen[g] = normal_or_gammaLog_rng(lambda_mu, lambda_sigma, is_prior_asymetric);
+
+    vector[G-1] lambda_gen_raw;
+    matrix[N, G] theta_gen;
+
+    for(g in 1:(G-1)) {
+      lambda_gen_raw[g] = normal_rng(0, 1);
+    }
+    lambda_gen = sum_to_zero_QR(lambda_raw, Q_lambda) * lambda_sigma;
+
+    {
+      vector[G] gamma_rate_gen = phi ./ exp(lambda_gen);
+      for(g in 1:G) {
+        for(n in 1:N) {
+          theta_gen[n, g] = gamma_rng(phi, gamma_rate_gen[g]);
+        }
+      }
+    }
+
+    // Sample gene wise sample wise abundances
+    for(n in 1:N) {
+      counts_gen_naive[n,] = multinomial_rng(to_vector(theta_gen[n,]) / sum(theta_gen[n,]), exposure[n]);
+      counts_gen_geneWise[n,] = multinomial_rng(to_vector(theta[n,]) / sum(theta[n,]), exposure[n]);
+    }
+  }
+
 }
