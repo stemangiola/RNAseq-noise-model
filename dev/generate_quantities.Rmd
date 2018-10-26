@@ -141,13 +141,13 @@ Set model names
 #   dir(path = here("stan"), pattern = ".stan") %>%
 #   gsub("\\.stan", "", .)
 model_names = c(
+  "logNormal_multinomial",
+  "logStudent_multinomial",
   "negBinomial",
   "multinomial",
   "dirichlet_multinomial",
-  "logNormal_multinomial",
-  "logStudent_multinomial"
+  "gamma_multinomial"
   )
-
 ```
 
 Compile all models
@@ -165,21 +165,30 @@ models =
 Run all models - MARTIN
 
 ```{r}
-data_list = list()
-control_list = list()
-for(i in 1:length(models)) {
-  data_list[[i]] = data_for_stan
-  control_list[[i]] = list(
-        max_treedepth = switch(
-          model_names[i],
-          "logNormal_multinomial" = 12,
-          "logStudent_multinomial" = 13,
-          10
-        ))
-}
-
-fits = sampling_multi(models, data_list, control_per_item = control_list) %>%
-  setNames(model_names)
+# model_defs = tibble(model_name = model_names) %>% 
+#   crossing(tibble(is_prior_asymetric = c(0,1))) %>%
+#   filter(model_name != "gamma_multinomial" | is_prior_asymetric == 0) #gamma_multinomial currently does not support assymetric prior
+# 
+# 
+# models_list = models[model_defs$model_name]
+# 
+# control_list = model_defs %>% rowwise() %>% do(list(max_treedepth = switch(
+#           model_name,
+#           "logNormal_multinomial" = 12,
+#           "logStudent_multinomial" = 13,
+#           10)
+#   )
+# )
+# 
+# #Copy the data for all runs
+# data_list = list()
+# for(i in 1:length(control_list)) {
+#   data_list[[i]] = data_for_stan
+#   
+# }
+# 
+# fits = sampling_multi(models, data_list, control_per_item = control_list) %>%
+#   setNames(model_names)
 ```
 
 Run all models - STEFANO

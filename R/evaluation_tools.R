@@ -84,7 +84,7 @@ evaluation_summary <- function(fit, true_params, printParamsResults = TRUE) {
 
   if(printParamsResults) {
     #Add convergence diagnostics
-    diags = rstan::summary(fit)$summary[eval_result$param_name ,]
+    diags = rstan::summary(fit)$summary[eval_result$param_name , , drop = FALSE]
 
     eval_result = eval_result %>% mutate(n_eff = diags[,"n_eff"], Rhat = diags[,"Rhat"])
 
