@@ -31,7 +31,7 @@ functions{
   	  return rng;
   	}
 
-  	real poisson_inverse_gamma_log_original_lpdf(int y, real mu, real beta, real tau) {
+  	real poisson_inverse_gaussian_log_original_lpdf(int y, real mu, real beta, real tau) {
 
   	  real exp_mu = exp(mu);
   	  real exp_mu_beta_tau = exp_mu*beta+tau;
