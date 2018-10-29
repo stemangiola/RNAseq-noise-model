@@ -28,6 +28,26 @@ functions {
     x[N] = x_aux;
     return x;
   }
+
+  real gamma_log_lpdf(vector x_log, real a, real b){
+
+    // This function is the  probability of the log gamma funnction
+    // in case you have data that is aleady in log form
+
+
+		vector[rows(x_log)] jacob = x_log; //jacobian
+		real norm_constant = a * log(b) -lgamma(a);
+		real a_minus_1 = a-1;
+		return sum( jacob ) + norm_constant * rows(x_log) + sum(  x_log * a_minus_1 - exp(x_log) * b ) ;
+
+	}
+
+	 real gamma_log_rng(real a, real b){
+
+	  return log(gamma_rng(a, b));
+
+	}
+
 }
 
 data {
@@ -56,7 +76,7 @@ parameters {
   vector[G - 1] lambda_raw;
   //real<lower=0> phi_raw_sigma;
   vector<lower=0>[G] phi_raw;
-  vector<lower=0>[G] theta[N];
+  vector[G] theta[N];
 }
 
 transformed parameters {
@@ -68,10 +88,12 @@ model {
   vector[G] gamma_rate = phi ./ exp(lambda);
   for(n in 1:N) {
     if(omit_data == 0) {
-      counts[n,] ~ multinomial(theta[n,] / sum(theta[n,]));
+      counts[n,] ~ multinomial( softmax(theta[n,]) );
     }
-    theta[n,] ~ gamma(phi, gamma_rate);
   }
+
+  for(g in 1:G) to_vector(theta[,g]) ~ gamma_log(phi[g], gamma_rate[g]);
+
   phi_raw ~ normal(0, 1);
   lambda_raw ~ normal(0, 1);
   lambda_sigma ~ normal(0, 2);
@@ -99,15 +121,15 @@ generated quantities{
       vector[G] gamma_rate_gen = phi ./ exp(lambda_gen);
       for(g in 1:G) {
         for(n in 1:N) {
-          theta_gen[n, g] = gamma_rng(phi[g], gamma_rate_gen[g]);
+          theta_gen[n, g] = gamma_log_rng(phi[g], gamma_rate_gen[g]);
         }
       }
     }
 
     // Sample gene wise sample wise abundances
     for(n in 1:N) {
-      counts_gen_naive[n,] = multinomial_rng(to_vector(theta_gen[n,]) / sum(theta_gen[n,]), exposure[n]);
-      counts_gen_geneWise[n,] = multinomial_rng(to_vector(theta[n,]) / sum(theta[n,]), exposure[n]);
+      counts_gen_naive[n,] = multinomial_rng(softmax(to_vector(theta_gen[n,])), exposure[n]);
+      counts_gen_geneWise[n,] = multinomial_rng(softmax(to_vector(theta[n,])), exposure[n]);
     }
   }
 
