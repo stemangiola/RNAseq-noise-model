@@ -58,7 +58,7 @@ functions{
       return log(prob);
     }
 
-  	real poisson_inverse_gamma_log_lpdf(int y, real mu, real beta, real tau) {
+  	real poisson_inverse_gaussian_log_lpdf(int y, real mu, real beta, real tau) {
 
   	  real mu = mu;
   	  real mu_beta_tau = mu + log(beta+tau);
