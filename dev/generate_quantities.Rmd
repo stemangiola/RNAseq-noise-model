@@ -25,7 +25,7 @@ registerDoParallel()
 rstan_options(auto_write = TRUE)
 options(mc.cores = parallel::detectCores())
 
-devtools::load_all()
+#devtools::load_all() # Sorry this costs me 30 minutes every day
 ```
 
 Setting global variables
