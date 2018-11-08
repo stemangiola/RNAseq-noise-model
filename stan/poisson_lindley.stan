@@ -37,7 +37,7 @@ functions{
       real theta = 0.5/exp_mu[i]*(alpha+exp_mu[i]*(-1+sqrt((4*exp_mu[i]+square(alpha+exp_mu[i]))/square(exp_mu[i]))));
       real alpha_y = alpha + y;
 
-      return (1 + alpha)*log(theta) - (1 + alpha_y)*log(1 + theta) + log(alpha + (alpha_y)/(1 + theta)) - lgamma(y+1) - lgamma(1 + alpha) + lgamma(alpha_y);
+      return (1 + alpha) * log(theta) - (1 + alpha_y) * log1p(theta) + log(alpha + alpha_y) - log1p(theta) - lgamma(y+1) - lgamma(1 + alpha) + lgamma(alpha_y);
     }
 
 }
@@ -64,8 +64,10 @@ parameters {
 
 }
 transformed parameters {
-  real<lower=0> lambda_sigma = lambda_sigma_raw / 1000;
-  real sigma = 1/sqrt(sigma_raw);
+  real<lower=0> lambda_sigma;
+  if(is_prior_asymetric) lambda_sigma = lambda_sigma / 1000;
+
+  real sigma = sigma_raw; // 1/sqrt(sigma_raw);
 }
 model {
 
@@ -80,7 +82,7 @@ model {
   lambda ~ normal_or_gammaLog(lambda_mu, lambda_sigma, is_prior_asymetric);
 
   // Sample from data
-  if(omit_data==0) for(n in 1:N) counts[n,] ~ poisson_inverse_gaussian_log(exposure_rate[n] + lambda, sigma, tau);
+  if(omit_data==0) for(n in 1:N) counts[n,] ~ poisson_lindley_log(exposure_rate[n] + lambda, sigma, tau);
 
 }
 generated quantities{

@@ -220,6 +220,18 @@ fits$`logNormal_multinomial_asymmetric-1` =
 )
 ```
 
+Test poisson-GIG
+
+```{r}
+
+fit.PGIG =
+  sampling_check_return(
+     stan_model(here("stan",sprintf("%s.stan", "poisson_inverseGaussian"))),
+    data = data_for_stan %>% lplyr::mutate(is_prior_asymetric = 1),
+    control = list( max_treedepth = 10)
+)
+
+```
 
 Get generated quantities
 
