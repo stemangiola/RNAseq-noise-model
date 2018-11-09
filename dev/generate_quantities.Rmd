@@ -221,12 +221,34 @@ fits =
   }
 
 # Fit a single model
-fits$`logNormal_multinomial_asymmetric-1` =
+fit1 =
   sampling_check_return(
-     stan_model(here("stan",sprintf("%s.stan", "logNormal_multinomial"))),
+     stan_model(here("stan",sprintf("%s.stan", "dirichlet_multinomial"))),
+    data = data_for_stan %>% lplyr::mutate(is_prior_asymetric = 1),
+    control = list( max_treedepth = 10)
+)
+fit2 =
+  sampling_check_return(
+     stan_model(here("stan",sprintf("%s.stan", "dirichlet_multinomial_explicit"))),
     data = data_for_stan %>% lplyr::mutate(is_prior_asymetric = 1),
     control = list( max_treedepth = 12)
 )
+
+
+fit1 %>% 
+  gather_draws(lambda[S]) %>% 
+  mean_qi() %>% 
+  rename(v1 = .value) %>% 
+  select(v1, S) %>% 
+  left_join(
+    fit2 %>% 
+      gather_draws(lambda[S]) %>% 
+      mean_qi() %>% 
+      rename(v2 = .value) %>% 
+      select(v2, S)
+  )  %>% 
+  ggplot(aes(x=v1, y=v2)) + 
+  geom_point() + my_theme + xlab("Analytical") + ylab("Explicit")
 ```
 
 Show speed of the models
