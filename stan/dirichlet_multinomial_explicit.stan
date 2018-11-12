@@ -86,7 +86,7 @@ model {
   for(n in 1:N) theta[n] ~ dirichlet(sigma * softmax(lambda));
 
   // Sample from data
-  if(omit_data==0) for(n in 1:N) counts[n,] ~ dirichlet_multinomial(theta[n]);
+  if(omit_data==0) for(n in 1:N) counts[n,] ~ multinomial(theta[n]);
 
 }
 generated quantities{
