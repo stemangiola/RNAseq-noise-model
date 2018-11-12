@@ -33,7 +33,7 @@ Setting global variables
 ```{r}
 
 N = 20
-G = 100
+G = 30
 counts_source = "Acute_Myeloid_Leukemia_Primary_Blood_Derived_Cancer_-_Peripheral_Blood"
 
 # Evaluate whether to recompute input data frame
@@ -212,11 +212,11 @@ fits =
   }
 
 # Fit a single model
-fits$`logNormal_multinomial_asymmetric-1` =
+fits$`PIG` =
   sampling_check_return(
-     stan_model(here("stan",sprintf("%s.stan", "logNormal_multinomial"))),
-    data = data_for_stan %>% lplyr::mutate(is_prior_asymetric = 1),
-    control = list( max_treedepth = 12)
+     stan_model(here("stan",sprintf("%s.stan", "poisson_inverseGaussian"))),
+    data = data_for_stan %>% lplyr::mutate(is_prior_asymetric = 1) %>%  lplyr::mutate(omit_data = 1),
+    control = list( max_treedepth = 10), chains=1
 )
 ```
 
