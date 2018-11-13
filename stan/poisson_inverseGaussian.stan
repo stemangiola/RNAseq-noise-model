@@ -98,7 +98,7 @@ parameters {
   real<lower=0> lambda_mu; // So is compatible with logGamma prior
   real<lower=0> lambda_sigma_raw;
   //real<lower=0> sigma;
-  real<lower=0> tau;
+  real<lower=0, upper=1> tau;
   //real exposure_rate[N];
 
   // Gene-wise properties of the data
