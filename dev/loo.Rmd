@@ -1,0 +1,84 @@
+---
+title: "Comparison with LOO"
+output: html_notebook
+---
+
+```{r setup}
+set.seed(13254)
+
+# Import libraries
+library(tidyverse)
+library(magrittr)
+library(rstan)
+library(tidybayes)
+library(here)
+library(foreach)
+library(doParallel)
+library(loo)
+registerDoParallel()
+# library(future)
+# plan(multiprocess)
+
+rstan_options(auto_write = TRUE)
+options(mc.cores = parallel::detectCores())
+```
+
+
+```{r}
+
+N = 50
+G = 10
+counts_source = "Acute_Myeloid_Leukemia_Primary_Blood_Derived_Cancer_-_Peripheral_Blood"
+
+counts_tidy <- load_test_data(N, G, counts_source)
+data_for_stan = data_for_stan_from_tidy(N, G, counts_tidy)
+```
+
+```{r}
+model_names = c(
+  "multinomial",
+  "dirichlet_multinomial",
+  "negBinomial"
+  #"gamma_multinomial"
+  )
+```
+
+```{r, echo=FALSE}
+models =
+  foreach(model_name = model_names) %do% {
+    library(rstan) #On Windows, %dopar%-ed code does not share the main session
+    library(here) #On Windows, %dopar%-ed code does not share the main session
+    stan_model(here("stan",sprintf("%s.stan", model_name)))
+  } %>%
+  setNames(model_names)
+```
+
+
+```{r}
+model_defs = tibble(model_name = model_names) 
+
+
+models_list = models[model_defs$model_name]
+
+#Copy the data for all runs
+data_list = list()
+for(i in 1:length(models_list)) {
+  data_list[[i]] = data_for_stan
+
+}
+
+fits = sampling_multi(models, data_list) %>%
+  setNames(model_names)
+```
+
+```{r}
+loo_res <- fits %>% map(function(x) { 
+  log_lik <- extract_log_lik(x, merge_chains = FALSE)
+  r_eff <- relative_eff(exp(log_lik))
+  loo(log_lik, r_eff = r_eff)
+})
+loo_res %>% map(plot)
+
+compare(x = loo_res)
+```
+

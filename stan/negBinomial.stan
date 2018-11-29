@@ -77,6 +77,7 @@ generated quantities{
   int<lower=0> counts_gen_naive[N,G];
   int<lower=0> counts_gen_geneWise[N,G];
   vector[G] lambda_gen;
+  vector[N] log_lik;
 
   // Sample gene wise rates
   for(g in 1:G) lambda_gen[g] = normal_or_gammaLog_rng(lambda_mu, lambda_sigma, is_prior_asymetric);
@@ -87,5 +88,8 @@ generated quantities{
     counts_gen_geneWise[n,g] = neg_binomial_2_log_rng(exposure_rate[n] + lambda[g],  sigma);
   }
 
+  for(n in 1:N) {
+    log_lik[n] = neg_binomial_2_log_lpmf(counts[n,] | exposure_rate[n] + lambda, sigma);
+  }
 
 }

@@ -77,6 +77,7 @@ model {
 generated quantities{
   int<lower=0> counts_gen_naive[N_gen,G_gen];
   int<lower=0> counts_gen_geneWise[N_gen,G_gen];
+  vector[N_gen] log_lik;
 
   vector[G_gen] lambda_gen;
 
@@ -88,6 +89,11 @@ generated quantities{
     for(n in 1:N) {
       counts_gen_naive[n,] = multinomial_rng(softmax(lambda_gen), exposure[n]);
       counts_gen_geneWise[n,] = multinomial_rng(softmax(lambda), exposure[n]);
+    }
+
+    //log_lik for LOO
+    for(n in 1:N) {
+      log_lik[n] = multinomial_lpmf(counts[n,] | softmax(lambda));
     }
   }
 

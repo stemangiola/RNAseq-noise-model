@@ -82,6 +82,7 @@ generated quantities{
   int<lower=0> counts_gen_geneWise[N_gen,G_gen];
 
   vector[G_gen] lambda_gen;
+  vector[N_gen] log_lik;
 
   if(generate_quantities) {
     // Sample gene wise rates
@@ -109,6 +110,12 @@ generated quantities{
       counts_gen_naive[n,] = multinomial_rng(to_vector(theta_gen[n,]) / sum(theta_gen[n,]), exposure[n]);
       counts_gen_geneWise[n,] = multinomial_rng(to_vector(theta[n,]) / sum(theta[n,]), exposure[n]);
     }
+
+    //log_lik for LOO
+    for(n in 1:N) {
+      log_lik[n] = multinomial_lpmf(counts[n,] | theta[n,] / sum(theta[n,]));
+    }
+
   }
 
 }
