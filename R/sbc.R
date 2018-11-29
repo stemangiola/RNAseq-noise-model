@@ -20,26 +20,32 @@ sbc <- function(model, generator, N_steps, ...) {
       data.frame(run = run_id,
                  n_divergent = rstan::get_num_divergent(fit),
                  n_treedepth = rstan::get_num_max_treedepth(fit),
-                 n_chains_low_bfmi = length(rstan::get_low_bfmi_chains(fit)))
+                 n_chains_low_bfmi = length(rstan::get_low_bfmi_chains(fit)),
+                 total_time = sum(rstan::get_elapsed_time(fit))
+                 )
     })
 
   return(list(params = param_stats, diagnostics = diagnostics, data = observed_list, true_values = true_list))
 }
 
-plot_sbc_params <- function(params, n_bins = 10, caption = NULL) {
+plot_sbc_params <- function(params, binwidth = 10, caption = NULL) {
   #CI - taken from https://github.com/seantalts/simulation-based-calibration/blob/master/Rsbc/generate_plots_sbc_inla.R
+
+  if(100 %% binwidth != 0) {
+    stop("binwidth has to divide 100")
+  }
   n_simulations <- length(unique(params$run))
-  CI = qbinom(c(0.005,0.5,0.995), size=n_simulations,prob  =  1/n_bins)
+  CI = qbinom(c(0.005,0.5,0.995), size=n_simulations,prob  =  binwidth / 100)
   lower = CI[1]
   mean = CI[2]
   upper = CI[3]
 
   #The visualisation style taken as well from   https://github.com/seantalts/simulation-based-calibration/blob/master/Rsbc/generate_plots_sbc_inla.R
   print(params %>%
-          ggplot(aes(x = order_within / 100)) +
-          geom_segment(aes(x=0,y=mean,xend=1,yend=mean),colour="grey25") +
-          geom_polygon(data=data.frame(x=c(-0.1,0,-0.1,1.1,1.00,1.1,-0.1),y=c(lower,mean,upper,upper,mean,lower,lower)),aes(x=x,y=y),fill="grey45",color="grey25",alpha=0.5) +
-          geom_histogram(breaks=seq(0,1,length.out = n_bins + 1) ,fill="#A25050",colour="black") +
+          ggplot(aes(x = order_within)) +
+          geom_segment(aes(x=0,y=mean,xend=100,yend=mean),colour="grey25") +
+          geom_polygon(data=data.frame(x=c(-10,0,-10,110,100,110,-10),y=c(lower,mean,upper,upper,mean,lower,lower)),aes(x=x,y=y),fill="grey45",color="grey25",alpha=0.5) +
+          geom_histogram(breaks =  seq(1, 101, by = binwidth), closed = "left" ,fill="#A25050",colour="black") +
           facet_wrap(~param_name, scales = "free_y") +
           ggtitle("Posterior order within 100 samples")
   )
@@ -58,7 +64,8 @@ summarise_sbc_diagnostics <- function(sbc_results) {
     summarise(
       has_divergence = mean(n_divergent > 0),
       has_treedepth = mean(n_treedepth > 0),
-      has_low_bfmi = mean(n_chains_low_bfmi > 0)
+      has_low_bfmi = mean(n_chains_low_bfmi > 0),
+      median_total_time = median(total_time)
       )
 
 }
