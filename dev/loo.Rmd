@@ -36,10 +36,10 @@ data_for_stan = data_for_stan_from_tidy(N, G, counts_tidy)
 
 ```{r}
 model_names = c(
-  "multinomial",
+  #"multinomial",
   "dirichlet_multinomial",
-  "negBinomial"
-  #"gamma_multinomial"
+  #"negBinomial"
+  "gamma_multinomial"
   )
 ```
 
@@ -51,6 +51,15 @@ models =
     stan_model(here("stan",sprintf("%s.stan", model_name)))
   } %>%
   setNames(model_names)
+```
+
+```{r}
+data_for_stan <- generate_data_gamma_multinomial(10, rep(1000, 30))$observed
+data_for_stan$generate_quantities <- 1
+data_for_stan$my_prior <-  c(0,5)
+data_for_stan$is_prior_asymetric <-  0
+data_for_stan$exposure <- rowSums(data_for_stan$counts)
+
 ```
 
 

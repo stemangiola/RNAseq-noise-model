@@ -112,8 +112,20 @@ generated quantities{
     }
 
     //log_lik for LOO
-    for(n in 1:N) {
-      log_lik[n] = multinomial_lpmf(counts[n,] | theta[n,] / sum(theta[n,]));
+    {
+      int S = 10000;
+      vector[G] gamma_rate_gen = phi ./ exp(lambda_gen);
+      for(n in 1:N) {
+        vector[S] log_lik_samp;
+        for(s in 1:S) {
+          vector[G] gamma_samp;
+          for(g in 1:G) {
+            gamma_samp[g] = gamma_rng(phi[g], gamma_rate_gen[g]);
+          }
+          log_lik_samp[s] = multinomial_lpmf(counts[n,] | gamma_samp / sum(gamma_samp));
+        }
+        log_lik[n] = log_sum_exp(log_lik_samp) - log(S);
+      }
     }
 
   }
