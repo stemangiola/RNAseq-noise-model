@@ -50,8 +50,6 @@ real poisson_inverse_gaussian_lpmf(int y, real log_mu, real tau){
 
 	  for(y_dot in 2:y) {
 
-
-
   		p_arr_log[y_dot + 1] =
   			log_sum_exp(
   				 tau_mu_2_log_tau_mu_2_1_log + log(1-3.0/(2*y_dot)) + p_arr_log[y_dot],

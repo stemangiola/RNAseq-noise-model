@@ -368,28 +368,28 @@ tbl =
     `dpoisinvgauss` = sapply(. , actuar::dpoisinvgauss, 100, 2000, log=T),
     `dpoisinvgauss + stable besselK` = sapply(. , my_dpoisinvgauss, 100, 1/2000),
     `dnbinom` = sapply(. , dnbinom,mu= 100, size=15)%>% log,
-    `dSICHEL` = sapply(. , dSICHEL,mu= 100, sigma=0.1, nu=-30, log=T),
-    dnorm = sapply(. , dt.scaled, df = 40, mean=100, sd=50) %>% log ,
+    `dSICHEL` = sapply(. , gamlss.dist::dSICHEL,mu= 100, sigma=0.1, nu=-30, log=T),
+    dnorm = sapply(. ,  metRology::dt.scaled, df = 40, mean=100, sd=50) %>% log ,
     `dt.scaled` = sapply(x , dnorm,mean= 100, 50)%>% log
   ) %>%
   gather(model, `log density`, -x)
 
 tbl  %>%
-  filter(model %in% c("dpoisinvgauss", "dpoisinvgauss + stable besselK")) %>%
+  dplyr::filter(model %in% c("dpoisinvgauss", "dpoisinvgauss + stable besselK")) %>%
   ggplot(aes(x = x, y=`log density`, color = model)) + geom_point() + facet_grid(~model) + my_theme +
   ggtitle("sapply(seq(0,1000, 10) , actuar::dpoisinvgauss, 100, 2000, log=T)")
 
 tbl  %>%
-  filter(model != "dpoisinvgauss") %>%
-  mutate(
+  dplyr::filter(model != "dpoisinvgauss") %>%
+  dplyr::mutate(
     Type = ifelse(
       model %in% c("dpoisinvgauss", "dpoisinvgauss + stable besselK", "dnbinom", "dSICHEL"),
       "Discrete",
       "Continuous"
     )
   ) %>%
-  mutate(Type = factor(Type, levels = c("Discrete", "Continuous"))) %>%
-  filter(Type == "Discrete") %>%
+  dplyr::mutate(Type = factor(Type, levels = c("Discrete", "Continuous"))) %>%
+  dplyr::filter(Type == "Discrete") %>%
   ggplot(aes(x = x, y=`log density`, color = model)) + geom_point() + facet_grid(~ Type) + my_theme +
   ggtitle("NB vs. PIG vs. SICHEL")
 
