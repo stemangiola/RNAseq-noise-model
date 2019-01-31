@@ -24,8 +24,8 @@ registerDoParallel()
 
 rstan_options(auto_write = TRUE)
 options(mc.cores = parallel::detectCores())
-#Sys.setenv(USE_CXX14 = 1)
-#devtools::install(quick = TRUE) #The PKG needs to be installed for sampling_multi to work
+
+#devtools::load_all() # Sorry this costs me 30 minutes every day
 ```
 
 Setting global variables
@@ -75,6 +75,7 @@ if(recompute_counts_tidy) {
   counts_data = list(N = N, G = G, counts_tidy = counts_tidy)
   saveRDS(counts_data, file = temp_file_counts)
 }
+<<<<<<< HEAD
 # Produce input for Stan
 ```
 
@@ -231,6 +232,8 @@ abline(0,1)
    	geom_boxplot(outlier.size = 0, lwd=0.2, position = position_dodge(width=0.8)) +
    geom_point(position=position_jitterdodge(dodge.width=0.8), size = 0.2, shape = 21 ) + scale_y_log10()
  
+=======
+>>>>>>> master
 ```
 
 Wrappers and utilities
@@ -280,6 +283,8 @@ data_for_stan = list(
   # Info on data set
   my_prior = c(0,5),
   omit_data = 0,
+  generate_quantities = 1,
+  is_prior_asymetric = 0,
   exposure =
     counts_tidy %>%
     group_by(sample) %>%
@@ -295,13 +300,13 @@ Set model names
 #   dir(path = here("stan"), pattern = ".stan") %>%
 #   gsub("\\.stan", "", .)
 model_names = c(
+  "logNormal_multinomial",
+  "logStudent_multinomial",
   "negBinomial",
   "multinomial",
   "dirichlet_multinomial",
-  "logNormal_multinomial",
-  "logStudent_multinomial"
+  "gamma_multinomial"
   )
-
 ```
 
 Compile all models
@@ -319,21 +324,30 @@ models =
 Run all models - MARTIN
 
 ```{r}
-data_list = list()
-control_list = list()
-for(i in 1:length(models)) {
-  data_list[[i]] = data_for_stan
-  control_list[[i]] = list(
-        max_treedepth = switch(
-          model_names[i],
-          "logNormal_multinomial" = 12,
-          "logStudent_multinomial" = 13,
-          10
-        ))
-}
-
-fits = sampling_multi(models, data_list, control_per_item = control_list) %>%
-  setNames(model_names)
+# model_defs = tibble(model_name = model_names) %>% 
+#   crossing(tibble(is_prior_asymetric = c(0,1))) %>%
+#   filter(model_name != "gamma_multinomial" | is_prior_asymetric == 0) #gamma_multinomial currently does not support assymetric prior
+# 
+# 
+# models_list = models[model_defs$model_name]
+# 
+# control_list = model_defs %>% rowwise() %>% do(list(max_treedepth = switch(
+#           model_name,
+#           "logNormal_multinomial" = 12,
+#           "logStudent_multinomial" = 13,
+#           10)
+#   )
+# )
+# 
+# #Copy the data for all runs
+# data_list = list()
+# for(i in 1:length(control_list)) {
+#   data_list[[i]] = data_for_stan
+#   
+# }
+# 
+# fits = sampling_multi(models, data_list, control_per_item = control_list) %>%
+#   setNames(model_names)
 ```
 
 Run all models - STEFANO
@@ -374,6 +388,7 @@ fits$`PIG` =
 )
 ```
 
+<<<<<<< HEAD
 Test poisson-GIG
 
 ```{r}
@@ -386,6 +401,14 @@ fit.PGIG =
 )
 
 ```
+=======
+Show speed of the models
+
+```{r}
+fits %>% map_dbl(function(x) { sum(get_elapsed_time(x))})
+```
+
+>>>>>>> master
 
 Get generated quantities
 
@@ -418,7 +441,7 @@ generated_quant %>%
   {
     (.) %>%
     ggplot(aes(`Read count` + 1, color = Source)) +
-    stat_bin(geom = "step", position = "identity", bins=50) +
+    stat_bin(geom = "step", position = "identity", bins=50, alpha = 0.7) +
     facet_grid(term ~ model_name) +
     scale_x_log10() +
     scale_color_brewer(palette = "Set1") +
@@ -447,7 +470,7 @@ generated_quant %>%
   {
     (.) %>%
     ggplot(aes(`Read count` + 1, color = Source)) +
-    stat_bin(geom = "step", position = "identity", bins=50, size=0.2 ) +
+    stat_bin(geom = "step", position = "identity", bins=50, size=0.2, alpha = 0.7 ) +
     facet_grid(model_name ~ ens_iso) +
     scale_x_log10() +
     scale_color_brewer(palette = "Set1") +
