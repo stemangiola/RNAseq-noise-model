@@ -1,0 +1,235 @@
+---
+title: "qq_plots_of_discrete_distributions_on_transcriptomic_data"
+author: "Mangiola Stefano"
+date: "31/01/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+# Import libraries
+
+set.seed(13254)
+
+# Import libraries
+library(tidyverse)
+library(magrittr)
+library(rstan)
+library(tidybayes)
+library(here)
+library(foreach)
+library(doParallel)
+registerDoParallel()
+# library(future)
+# plan(multiprocess)
+
+rstan_options(auto_write = TRUE)
+options(mc.cores = parallel::detectCores())
+
+#devtools::load_all() # Sorry this costs me 30 minutes every day
+
+my_theme = 	
+	theme_bw() +
+	theme(
+		panel.border = element_blank(),
+		axis.line = element_line(),
+		panel.grid.major = element_line(size = 0.2),
+		panel.grid.minor = element_line(size = 0.1),
+		text = element_text(size=12),
+		legend.position="bottom",
+		aspect.ratio=1,
+		axis.text.x = element_text(angle = 90, hjust = 1),
+		strip.background = element_blank(),
+		axis.title.x  = element_text(margin = margin(t = 10, r = 10, b = 10, l = 10)),
+		axis.title.y  = element_text(margin = margin(t = 10, r = 10, b = 10, l = 10))
+	)
+
+# Tools
+source("https://gist.githubusercontent.com/stemangiola/90a528038b8c52b21f9cfa6bb186d583/raw/4d5fa8dfd52c7687d803608c3e71ace1b71a2038/transcription_tool_kit.R")
+
+```
+
+# TCGA Leukemia
+
+```{r load_data, include=FALSE, cache=TRUE}
+
+counts_source = "Acute_Myeloid_Leukemia_Primary_Blood_Derived_Cancer_-_Peripheral_Blood"
+counts = 
+	
+	read_csv(here("big_data", "tibble_TCGA_files", paste0(counts_source, ".csv"))) %>%
+  
+  # Take the highest expressed
+  mutate_if(is.character, as.factor) %>%
+    right_join(
+     (.) %>% group_by(ens_iso) %>% summarise(m = `read count` %>% median) %>% arrange(m %>% desc) %>% head(n = 10000)
+   ) %>%
+  
+  # Take the ones with bigger ratio sd / median
+   right_join(
+     (.) %>%
+       group_by(ens_iso) %>%
+    summarise(
+      med = `read count` %>% `+` (1) %>% median, 
+      sd = `read count` %>% `+` (1) %>% sd
+    ) %>%
+     mutate(ratio = log(sd)/log(med+1)) %>%
+     arrange(ratio %>% desc) %>%
+     head(n=20)
+   )
+
+```
+
+
+```{r predict_values, include=FALSE, cache=TRUE}
+
+counts.predicted = 
+	
+	counts %>%
+  
+  # Infer NB
+   #group_by(ens_iso) %>%
+  multidplyr::partition(ens_iso) %>%
+   do({
+ 
+     `%>%` = magrittr::`%>%`
+		library(tidyverse)
+		library(magrittr)
+     # lines(seq(0,1000, 10) , sapply(seq(0,1000, 10)  , gamlss.dist::dSICHEL,mu= 100, sigma=0.05, nu=-0.3, log=T))
+     
+    # Negative binomial
+    fit_NB =  (.) %>%
+       arrange(`read count`) %>%
+       pull(`read count`) %>%
+      MASS::fitdistr("Negative Binomial")
+    
+    # Sichel
+    fit_SH =  (.) %>%
+       arrange(`read count`) %>%
+       pull(`read count`) %>%
+      MASS::fitdistr(gamlss.dist::dSICHEL, list(mu= 100, sigma=0.1, nu=-5), upper = c(4000, 20, 0),  lower=c(0, 0.0001, -10))
+
+    
+    (.) %>%
+      arrange(`read count`) %>%
+      mutate(
+      	predicted_NB = 
+      		qnbinom(
+	      		ppoints(`read count`), 
+	      		size=(fit_NB[1] %$% estimate)[1], 
+	      		mu=(fit_NB[1] %$% estimate)[2]
+	      		)
+      ) %>%
+      mutate(
+      	predicted_SH = 
+      		gamlss.dist::qSICHEL(
+      			ppoints(`read count`), 
+      			nu = (fit_SH[1] %$% estimate)[3], 
+      			sigma=(fit_SH[1] %$% estimate)[2], 
+      			mu=(fit_SH[1] %$% estimate)[1], 
+      			max.value = max(`read count`)
+      			)
+      	) %>%
+    	
+    	# For track record
+      mutate(
+        SH_mu = (fit_SH[1] %$% estimate)[1], 
+        SH_sigma = (fit_SH[1] %$% estimate)[2],
+        SH_nu = (fit_SH[1] %$% estimate)[3]
+        )
+      
+ 	}) %>%
+  collect() %>%
+	ungroup()
+
+```
+
+## Plot
+
+```{r pressure, echo=FALSE, fig.width=12, fig.height=12}
+
+counts.predicted %>%
+	gather(model, predicted, c("predicted_NB", "predicted_SH")) %>%
+	ggplot(aes(x=`predicted` + 1, y=`read count` + 1, label=ens_iso, color=model)) + 
+	geom_abline(intercept = 0, slope = 1, color="grey") + 
+	geom_line() + 
+	facet_wrap(~ ens_iso, scales = "free")  +
+	expand_limits(y=1, x=1) + 
+	scale_y_log10() +
+	scale_x_log10() +
+	my_theme 
+   
+
+```
+
+# Cell types
+
+```{r load_data cell_type, include=FALSE, cache=TRUE}
+
+counts = 
+	foreach(
+		f = dir(
+			path = "big_data/tibble_cellType_files", 
+			pattern="tibble_cellTypes_t_",
+			full.names = T
+		),
+		.combine = bind_rows
+	) %dopar% {
+		read_csv(f)
+	} %>%
+	
+	# Remove redundant
+	# Average duplicated genes
+	left_join( 
+		(.) %>% 
+			distinct(symbol) %>% 
+			mutate(
+				part = 1:n() %>% 
+					divide_by(length((.))) %>%
+					multiply_by(44) %>% 
+					ceiling 
+			) 
+	) %>%
+	multidplyr::partition(part) %>%
+	do({
+		`%>%` = magrittr::`%>%`
+		library(tidyverse)
+		library(magrittr)
+		
+		(.) %>%
+			group_by(sample, symbol, `Cell type formatted`) %>%
+			summarise(`read count` = `read count` %>% median(na.rm = T)) %>%
+			ungroup() 
+		
+	}) %>%
+	collect() %>%
+	ungroup() %>%
+	select(-part)
+
+counts %>%
+	
+	# Normalise
+	norm_RNAseq( 
+			sample_column = "sample", 
+			gene_column = "symbol", 
+			value_column = "read count"
+		)
+
+  # Take the highest expressed
+  mutate_if(is.character, as.factor) %>%
+    right_join(
+     (.) %>% group_by(symbol) %>% summarise(m = `read count` %>% median) %>% arrange(m %>% desc) %>% head(n = 10000)
+   ) %>%
+
+  # Take the ones with bigger ratio sd / median
+   right_join(
+     (.) %>%
+       group_by(ens_iso) %>%
+    summarise(
+      med = `read count` %>% `+` (1) %>% median,
+      sd = `read count` %>% `+` (1) %>% sd
+    ) %>%
+     mutate(ratio = log(sd)/log(med+1)) %>%
+     arrange(ratio %>% desc) %>%
+     head(n=20)
+   )
+
+```
