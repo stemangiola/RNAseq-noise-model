@@ -36,7 +36,8 @@ data {
   int<lower=0> G;
   int<lower=0> counts[N,G];
   real my_prior[2];
-  int<lower=0, upper=1> omit_data;
+  //Set to 1 for each sample that is held out
+  int<lower=0, upper=1> holdout[N];
 
   // Alternative models
   int<lower=0, upper=1> is_prior_asymetric;
@@ -70,7 +71,11 @@ model {
   lambda ~ normal_or_gammaLog(lambda_mu, lambda_sigma, is_prior_asymetric);
 
   // Sample from data
-  if(omit_data==0) for(n in 1:N) counts[n,] ~ neg_binomial_2_log(exposure_rate[n] + lambda, sigma);
+  for(n in 1:N) {
+    if(holdout[n] == 0) {
+      counts[n,] ~ neg_binomial_2_log(exposure_rate[n] + lambda, sigma);
+    }
+  }
 
 }
 generated quantities{

@@ -56,12 +56,13 @@ data {
   int<lower=0> G;
   int<lower=0> counts[N,G];
   real my_prior[2];
-  int<lower=0, upper=1> omit_data;
   int<lower=0> exposure[N];
 
   // Alternative models
   int<lower=0, upper=1> is_prior_asymetric;
 
+  //Set to 1 for each sample that is held out
+  int<lower=0, upper=1> holdout[N];
 }
 
 parameters {
@@ -84,7 +85,11 @@ model {
   lambda ~ normal_or_gammaLog(lambda_prior, is_prior_asymetric);
 
   // Sample from data
-  if(omit_data==0) for(n in 1:N) counts[n,] ~ dirichlet_multinomial(sigma * softmax(lambda));
+  for(n in 1:N) {
+    if(holdout[n] == 0) {
+      counts[n,] ~ dirichlet_multinomial(sigma * softmax(lambda));
+    }
+  }
 
 }
 generated quantities{

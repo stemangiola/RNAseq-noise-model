@@ -56,7 +56,7 @@ data_for_stan_from_tidy <- function(N, G, counts_tidy) {
 
     # Info on data set
     my_prior = c(0,5),
-    omit_data = 0,
+    holdout = array(0,N), #Don't hold anything out
     generate_quantities = 1,
     is_prior_asymetric = 0,
     exposure =

@@ -34,8 +34,10 @@ data {
   int<lower=1> N;
   int<lower=1> G;
   int<lower=0> counts[N, G];
-  int<lower=0, upper=1> omit_data;
   int<lower=0, upper=1> generate_quantities;
+
+  //Set to 1 for each sample that is held out
+  int<lower=0, upper=1> holdout[N];
 }
 
 transformed data {
@@ -67,7 +69,7 @@ transformed parameters {
 model {
   vector[G] gamma_rate = phi ./ exp(lambda);
   for(n in 1:N) {
-    if(omit_data == 0) {
+    if(holdout[n] == 0) {
       counts[n,] ~ multinomial(theta[n,] / sum(theta[n,]));
     }
     theta[n,] ~ gamma(phi, gamma_rate);
