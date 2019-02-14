@@ -43,7 +43,6 @@ data {
   int<lower=0> G;
   int<lower=0> counts[N,G];
   real my_prior[2];
-  int<lower=0, upper=1> omit_data;
   int<lower=0> exposure[N];
 
   // Alternative models
@@ -51,6 +50,8 @@ data {
 
   int<lower=0, upper=1> generate_quantities;
 
+  //Set to 1 for each sample that is held out
+  int<lower=0, upper=1> holdout[N];
 }
 
 transformed data {
@@ -86,7 +87,11 @@ model {
   for(n in 1:N) theta_z[n] ~ normal(0,1);
 
   // Sample from data
-  if(omit_data==0) for(n in 1:N) counts[n,] ~ multinomial(softmax(theta[n]));
+  for(n in 1:N) {
+    if(holdout[n] == 0) {
+      counts[n,] ~ multinomial(softmax(theta[n]));
+    }
+  }
 
 }
 generated quantities{
