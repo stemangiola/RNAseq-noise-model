@@ -1,0 +1,251 @@
+---
+title: "qq_plots_of_discrete_distributions_on_transcriptomic_data"
+author: "Mangiola Stefano"
+date: "31/01/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+# Import libraries
+
+#setwd("/wehisan/bioinf/bioinf-data/Papenfuss_lab/projects/mangiola.s/PostDoc/RNAseq-noise-model")
+set.seed(13254)
+
+# Import libraries
+library(tidyverse)
+library(magrittr)
+library(rstan)
+library(tidybayes)
+library(here)
+library(foreach)
+library(doParallel)
+registerDoParallel()
+# library(future)
+# plan(multiprocess)
+
+rstan_options(auto_write = TRUE)
+options(mc.cores = parallel::detectCores())
+
+#devtools::load_all() # Sorry this costs me 30 minutes every day
+
+my_theme = 	
+	theme_bw() +
+	theme(
+		panel.border = element_blank(),
+		axis.line = element_line(),
+		panel.grid.major = element_line(size = 0.2),
+		panel.grid.minor = element_line(size = 0.1),
+		text = element_text(size=12),
+		legend.position="bottom",
+		aspect.ratio=1,
+		axis.text.x = element_text(angle = 90, hjust = 1),
+		strip.background = element_blank(),
+		axis.title.x  = element_text(margin = margin(t = 10, r = 10, b = 10, l = 10)),
+		axis.title.y  = element_text(margin = margin(t = 10, r = 10, b = 10, l = 10))
+	)
+
+# Tools
+source("https://gist.githubusercontent.com/stemangiola/90a528038b8c52b21f9cfa6bb186d583/raw/dbd92c49fb03fb05ab0b465704b99c0a39e654d5/transcription_tool_kit.R")
+source("https://gist.githubusercontent.com/stemangiola/dd3573be22492fc03856cd2c53a755a9/raw/e4ec6a2348efc2f62b88f10b12e70f4c6273a10a/tidy_extensions.R")
+
+```
+
+
+# Cell types - t cells
+
+```{r load_data cell_type, cache=TRUE}
+
+counts = 
+	foreach(
+		f = dir(
+			path = 	here("big_data", "tibble_cellType_files"), 
+			pattern="tibble_cellTypes_t_",
+			full.names = T
+		),
+		.combine = bind_rows
+	) %dopar% {
+		read_csv(f) %>% mutate(sample = sample %>% as.character, isoform = isoform %>% as.character)
+	} %>%
+	
+	# Median redundant
+  do_parallel_start(40, "symbol") %>%
+  do({
+    	`%>%` = magrittr::`%>%`
+  		library(tidyverse)
+  		library(magrittr)
+    	
+    	(.) %>%
+  			group_by(sample, symbol, `Cell type formatted`) %>%
+  			summarise(`read count` = `read count` %>% median(na.rm = T)) %>%
+  			ungroup() 
+  }) %>%
+  do_parallel_end() %>%
+
+  # Normalise
+	norm_RNAseq( 
+			sample_column = "sample", 
+			gene_column = "symbol", 
+			value_column = "read count",cpm_threshold = 0.5
+		) %>%
+  mutate(`read count normalised` = `read count normalised` %>% as.integer) %>%
+
+  # Mark the bimodal distributions
+  do_parallel_start(40, "symbol") %>%
+ 	do({
+		`%>%` = magrittr::`%>%`
+		library(tidyverse)
+		library(magrittr)
+
+		(.) %>%
+		  group_by(symbol) %>%
+		  do(
+		    (.) %>%
+		    mutate(
+  		  `bimodal p-value` =
+  		    (.) %>%
+    		  pull(`read count normalised`) %>%
+    		  `+` (1) %>%
+    		  log %>%
+    		  diptest::dip.test() %$%
+    		  `p.value`
+		    )
+		  ) %>%
+		  ungroup()
+
+	}) %>%
+  do_parallel_end()
+  
+	  
+```
+
+```{r predict_values cell_type, cache=TRUE}
+
+nb_model = stan_model(here("stan",sprintf("%s.stan", "negBinomial_tidy")))
+
+counts_stan = 
+  counts %>%
+  filter(!filt_for_calc) %>%
+  inner_join( (.) %>% distinct(symbol) %>% sample_n(500) ) %>%
+  
+  left_join(
+    (.) %>% 
+    distinct(sample, symbol, `read count normalised`) %>% 
+    count(symbol) %>% 
+    mutate(end = cumsum(n)) %>%
+    mutate(start = c(1, .$end %>% rev() %>% `[` (-1) %>% rev %>% `+` (1)))
+  ) %>% 
+  arrange(symbol) 
+
+data_for_stan = list(
+  N = counts_stan %>% nrow,
+  G = counts_stan %>% distinct(symbol) %>% nrow,
+  S = counts_stan %>% distinct(sample) %>% nrow,
+  symbol_start_end = counts_stan %>% distinct(start, end) %>% select(start, end),
+  counts = counts_stan %>% select(`read count normalised`) %>% pull(1),
+  sample_idx = 
+    counts_stan %>%
+    mutate(sample = factor(sample)) %>% 
+    mutate(sample_idx = as.integer(sample)) %>% 
+    select(sample_idx) %>%
+    pull(1),
+
+  # Info on data set
+  omit_data = 0,
+  generate_quantities = 1,
+  is_prior_asymetric = 1
+)
+
+fit =
+  sampling(
+    nb_model,
+    data = data_for_stan, 
+    chains=4, iter=500
+)
+
+fit_parsed = fit %>% spread_draws(lambda[G], sigma[G], sigma_raw[G]) 
+
+fit_parsed %>% mean_qi() %>% ggplot(aes(x=lambda, y=sigma_raw)) + geom_point() +
+  stat_function(
+    fun=function(x)
+      exp(
+       fit %>% extract(pars="sigma_0") %$% sigma_0 %>% median() +
+        x * fit %>% extract(pars="sigma_slope") %$% sigma_slope %>% median()
+      ), geom="line")
+
+fit_parsed %>% 
+  mean_qi() %>%
+  head(n=10) %>%
+  left_join(
+    counts_stan %>% distinct(symbol) %>% mutate(G=1:n())
+  ) %>%
+  left_join(
+    counts_stan %>% select(symbol, `read count normalised`)
+  ) %>% 
+  group_by(symbol) %>%
+  do(
+    (.) %>%
+    arrange(`read count normalised`) %>%
+    mutate(
+    	predicted_NB = 
+    		qnbinom(
+      		ppoints(`read count normalised`), 
+      		size=.$sigma %>% unique, 
+      		mu=.$lambda %>% unique %>% exp
+      		)
+    ) 
+  ) %>%
+  ungroup() %>%
+  ggplot(aes(y = `read count normalised`, x = predicted_NB)) + 
+  geom_point() + 
+  facet_wrap(~ symbol, scale="free") + 
+  geom_abline(slope = 1, intercept=0) + scale_y_log10() + scale_x_log10() 
+
+
+```
+
+## Statistics
+
+```{r}
+
+(counts.predicted %>%
+  gather(model, predicted, c("predicted_NB", "predicted_SH")) %>%
+  mutate(err = (`read count normalised` - predicted) %>% abs) %>%
+  mutate(err_log = err %>% `+` (1) %>% log) %>%
+  group_by(symbol, model) %>%
+  summarise(err_sum = err_log %>% sum) %>%
+  ungroup %>%
+  spread(model, err_sum) %>%
+  mutate(err_diff = predicted_SH - predicted_NB) %>%
+  #gather(model, err_sum, c("predicted_NB", "predicted_SH")) %>%
+  mutate(symbol = factor(symbol, levels = (.) %>% distinct(symbol, err_diff) %>% arrange(err_diff %>% desc) %>% pull(symbol))) %>%
+  ggplot(aes(x = symbol, y=err_diff)) + geom_point() ) %>% plotly::ggplotly()
+  
+
+```
+
+## Plot
+
+```{r plot cell_type, echo=FALSE, fig.width=12, fig.height=12}
+
+counts.predicted %>%
+  filter(symbol=="RPS12") %>%
+	gather(model, predicted, c("predicted_NB", "predicted_SH")) %>%
+	ggplot(aes(x=`predicted` + 1, y=`read count normalised` + 1, label=symbol, color=model)) + 
+	geom_abline(intercept = 0, slope = 1, color="grey") + 
+	geom_line() + 
+	facet_wrap(~ symbol, scales = "free")  +
+	expand_limits(y=1, x=1) + 
+	scale_y_log10() +
+	scale_x_log10() +
+	my_theme 
+   
+
+counts.predicted %>%
+	gather(model, value, c("read count normalised", "predicted_NB", "predicted_SH")) %>%
+	ggplot(aes(x=model, y=value + 1, color=model)) + 
+	geom_jitter() + 
+	facet_wrap(~ symbol, scales = "free")  +
+	scale_y_log10() +
+	my_theme 
+
+```
