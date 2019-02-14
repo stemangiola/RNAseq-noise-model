@@ -334,8 +334,16 @@ actuar::dpoisinvgauss(100, mean = 100, dispersion = 1/1000) %>% log
 
 sapply(0:100, actuar::dpoisinvgauss, 100, 1000) %>% plot
 
-approximated_modified_bessel_second_kind_log(0.5, 100, 0)
-besselK(0.5, 100)
+approximated_modified_bessel_second_kind_log(0.1, 100, 0)
+besselK(0.1, 100) %>% log
+approximated_modified_bessel_second_kind_log(10, 100, 0)
+besselK(10, 100) %>% log
+approximated_modified_bessel_second_kind_log(30, 100, 0)
+besselK(30, 100) %>% log
+approximated_modified_bessel_second_kind_log(30, 1000, 0)
+besselK(30, 1000) %>% log
+
+
 
  my_dpoisinvgauss = function( x,  mu,  phi)
 {
