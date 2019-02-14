@@ -100,7 +100,6 @@ get_FANTOM5 = function(){
         mutate(`Cell type formatted` = ifelse(grepl("adipose, donor", onto_value, ignore.case = T), "adipose", `Cell type formatted`)) %>%
 
         # filter only recognised cell types
-        filter(!is.na(`Cell type formatted`)) %>%
         distinct(onto_link, `Cell type`, `Cell type formatted`)
 
     ) %>%
@@ -124,9 +123,9 @@ get_BLUEPRINT = function(){
     filter(!is.na(`Cell type`)) %>%
 
     # Get data from URL
-    separate(URL, sep="/|\\.", sprintf("URL_%s", 1:30)) %>%
+    separate(URL, sep="/|\\.", sprintf("URL_%s", 1:30), remove = F) %>%
     mutate(`Cell type` = gsub("_", " ", URL_15)) %>%
-    mutate(sample = URL_22) %>%
+    mutate(sample = URL_18) %>%
 
     # Chenage cell type names
     mutate(`Cell type formatted` = NA) %>%
@@ -142,10 +141,8 @@ get_BLUEPRINT = function(){
     mutate(`Cell type formatted` = ifelse(grepl("hematopoietic multipotent progenitor cell", `Cell type`, ignore.case=T), "stem_cell", `Cell type formatted`)) %>%
     mutate(`Cell type formatted` = ifelse(grepl("hematopoietic stem cell", `Cell type`, ignore.case=T), "stem_cell", `Cell type formatted`)) %>%
     mutate(`Cell type formatted` = ifelse(grepl("CD38-negative naive B cell", `Cell type`, ignore.case=T), "b_cell_naive", `Cell type formatted`)) %>%
-    mutate(`Cell type formatted` = ifelse(grepl("CD8-positive, alpha-beta T cell", `Cell type`, ignore.case=T), "t_CD8", `Cell type formatted`)) %>%
     mutate(`Cell type formatted` = ifelse(grepl("cytotoxic CD56-dim natural killer cell", `Cell type`, ignore.case=T), "natural_killer", `Cell type formatted`)) %>%
     mutate(`Cell type formatted` = ifelse(grepl("common myeloid progenitor", `Cell type`, ignore.case=T), "myeloid", `Cell type formatted`)) %>%
-    mutate(`Cell type formatted` = ifelse(grepl("CD4-positive, alpha-beta T cell", `Cell type`, ignore.case=T), "t_CD4", `Cell type formatted`)) %>%
     mutate(`Cell type formatted` = ifelse(grepl("inflammatory macrophage", `Cell type`, ignore.case=T), "macrophage_M1", `Cell type formatted`)) %>%
     mutate(`Cell type formatted` = ifelse(grepl("macrophage", `Cell type`, ignore.case=T), "macrophage", `Cell type formatted`)) %>%
     mutate(`Cell type formatted` = ifelse(grepl("endothelial", `Cell type`, ignore.case=T), "endothelial", `Cell type formatted`)) %>%
@@ -156,18 +153,18 @@ get_BLUEPRINT = function(){
     mutate(`Cell type formatted` = ifelse(grepl("immature conventional dendritic cell", `Cell type`, ignore.case=T), "dendritic_immature", `Cell type formatted`)) %>%
     mutate(`Cell type formatted` = ifelse(grepl("mature conventional dendritic cell", `Cell type`, ignore.case=T), "dendritic", `Cell type formatted`)) %>%
     mutate(`Cell type formatted` = ifelse(grepl("osteoclast", `Cell type`, ignore.case=T), "osteoclast", `Cell type formatted`)) %>%
-    mutate(`Cell type formatted` = ifelse(grepl("central memory CD4-positive, alpha-beta T cell", `Cell type`, ignore.case=T), "t_memory_central", `Cell type formatted`)) %>%
-    mutate(`Cell type formatted` = ifelse(grepl("effector memory CD4-positive, alpha-beta T cell", `Cell type`, ignore.case=T), "t_memory_effector", `Cell type formatted`)) %>%
-    mutate(`Cell type formatted` = ifelse(grepl("regulatory T cell", `Cell type`, ignore.case=T), "t_reg", `Cell type formatted`)) %>%
-    mutate(`Cell type formatted` = ifelse(grepl("central memory CD8-positive, alpha-beta T cell", `Cell type`, ignore.case=T), "t_CD8_memory_central", `Cell type formatted`)) %>%
-    mutate(`Cell type formatted` = ifelse(grepl("effector memory CD8-positive, alpha-beta T cell", `Cell type`, ignore.case=T), "t_CD8_memory_effector", `Cell type formatted`)) %>%
     mutate(`Cell type formatted` = ifelse(grepl("class switched memory B cell", `Cell type`, ignore.case=T), "b_cell_memory", `Cell type formatted`)) %>%
     mutate(`Cell type formatted` = ifelse(grepl("memory B cell", `Cell type`, ignore.case=T), "b_cell_memory", `Cell type formatted`)) %>%
     mutate(`Cell type formatted` = ifelse(grepl("monocyte", `Cell type`, ignore.case=T), "monocyte", `Cell type formatted`)) %>%
     mutate(`Cell type formatted` = ifelse(grepl("peripheral blood mononuclear cell", `Cell type`, ignore.case=T), "mono_derived", `Cell type formatted`)) %>%
 
-    # Filter
-    filter(!is.na(`Cell type formatted`)) %>%
+    mutate(`Cell type formatted` = ifelse(`Cell type`==("CD8-positive alpha-beta T cell"), "t_CD8", `Cell type formatted`)) %>%
+    mutate(`Cell type formatted` = ifelse(`Cell type`==("CD4-positive alpha-beta T cell"), "t_CD4", `Cell type formatted`)) %>%
+    mutate(`Cell type formatted` = ifelse(grepl("central memory CD8-positive", `Cell type`, ignore.case=T), "t_CD8_memory_central", `Cell type formatted`)) %>%
+    mutate(`Cell type formatted` = ifelse(grepl("effector memory CD8-positive", `Cell type`, ignore.case=T), "t_CD8_memory_effector", `Cell type formatted`)) %>%
+    mutate(`Cell type formatted` = ifelse(grepl("central memory CD4-positive", `Cell type`, ignore.case=T), "t_memory_central", `Cell type formatted`)) %>%
+    mutate(`Cell type formatted` = ifelse(grepl("effector memory CD4-positive", `Cell type`, ignore.case=T), "t_memory_effector", `Cell type formatted`)) %>%
+    mutate(`Cell type formatted` = ifelse(grepl("regulatory T cell", `Cell type`, ignore.case=T), "t_reg", `Cell type formatted`)) %>%
 
     # Select info
     select(sample, `Cell type`, `Cell type formatted`) %>%
@@ -191,8 +188,8 @@ get_BLUEPRINT = function(){
         ) %>%
           mutate(sample = my_file %>% basename())
       } %>%
-        separate(sample, sep="\\.", sprintf("sample_%s", 1:6)) %>%
-        mutate(sample = sample_5) %>%
+        separate(sample, sep="\\.", sprintf("sample_%s", 1:6), remove=F) %>%
+        mutate(sample = sample_1) %>%
         select(gene_id, expected_count, sample)
 
     ) %>%
@@ -365,6 +362,8 @@ save(bloodRNA, file="big_data/tibble_cellType_files/bloodRNA.RData")
 
 ENCODE %>% bind_rows(BLUEPRINT) %>% bind_rows(FANTOM5) %>% bind_rows(bloodRNA) %>%
   filter(symbol %>% is.na %>% `!`) %>%
+  filter(`Cell type formatted` %>% is.na %>% `!`) %>%
+  mutate(`read count` = `read count` %>% as.integer) %>%
   group_by(`Cell type formatted`) %>%
   do({
 
