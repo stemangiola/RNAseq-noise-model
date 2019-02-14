@@ -75,7 +75,7 @@ if(recompute_counts_tidy) {
   counts_data = list(N = N, G = G, counts_tidy = counts_tidy)
   saveRDS(counts_data, file = temp_file_counts)
 }
-<<<<<<< HEAD
+
 # Produce input for Stan
 ```
 
@@ -134,7 +134,7 @@ read_csv(here("big_data", "tibble_TCGA_files", paste0(counts_source, ".csv"))) %
      mutate(ratio = log(sd)/log(med+1)) %>%
      arrange(ratio %>% desc) %>%
      head(n=20)
-   )%>%
+   ) %>%
   
   # Infer NB
    #group_by(ens_iso) %>%
@@ -178,10 +178,11 @@ read_csv(here("big_data", "tibble_TCGA_files", paste0(counts_source, ".csv"))) %
 
   (.) %>%
      gather(model, predicted, c("predicted_NB", "predicted_SH")) %>%
-     ggplot(aes(x=`predicted`, y=`read count`, label=ens_iso)) + 
-     geom_point() + geom_abline(intercept = 0, slope = 1) + 
+     ggplot(aes(x=`predicted` + 1, y=`read count` + 1, label=ens_iso, color=model)) + 
+      geom_abline(intercept = 0, slope = 1, color="grey") + 
+      geom_line() + 
      facet_wrap(~ ens_iso, scales = "free")  + my_theme +
-     expand_limits(y=0, x=0)
+     expand_limits(y=1, x=1) + scale_y_log10() + scale_x_log10() 
    
    (.) %>% 
      ggplot(aes(x= ens_iso,y=`read count` + 1, fill=ens_iso)) +
@@ -232,8 +233,7 @@ abline(0,1)
    	geom_boxplot(outlier.size = 0, lwd=0.2, position = position_dodge(width=0.8)) +
    geom_point(position=position_jitterdodge(dodge.width=0.8), size = 0.2, shape = 21 ) + scale_y_log10()
  
-=======
->>>>>>> master
+
 ```
 
 Wrappers and utilities
@@ -388,7 +388,7 @@ fits$`PIG` =
 )
 ```
 
-<<<<<<< HEAD
+
 Test poisson-GIG
 
 ```{r}
@@ -401,14 +401,14 @@ fit.PGIG =
 )
 
 ```
-=======
+
 Show speed of the models
 
 ```{r}
 fits %>% map_dbl(function(x) { sum(get_elapsed_time(x))})
 ```
 
->>>>>>> master
+
 
 Get generated quantities
 
