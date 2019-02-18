@@ -298,5 +298,178 @@ log %>%
 
 # TCGA - leukemia
 
+```{r, cache=TRUE}
+
+counts_source = "Acute_Myeloid_Leukemia_Primary_Blood_Derived_Cancer_-_Peripheral_Blood"
+counts_TCGA = 
+	
+	read_csv(here("big_data", "tibble_TCGA_files", paste0(counts_source, ".csv"))) %>%
+  	# Median redundant
+  do_parallel_start(40, "ens_iso") %>%
+  do({
+    	`%>%` = magrittr::`%>%`
+  		library(tidyverse)
+  		library(magrittr)
+    	
+    	(.) %>%
+  			group_by(sample, ens_iso) %>%
+  			summarise(`read count` = `read count` %>% median(na.rm = T)) %>%
+  			ungroup() 
+  }) %>%
+  do_parallel_end() %>%
+
+  # Normalise
+	norm_RNAseq( 
+			sample_column = "sample", 
+			gene_column = "ens_iso", 
+			value_column = "read count",cpm_threshold = 10, prop = 9/10
+		) %>%
+  mutate(`read count normalised` = `read count normalised` %>% as.integer) %>%
+  mutate(`read count normalised log` = `read count normalised` %>% `+` (1) %>% log) 
+
+
+```
+
+```{r predict_values cell_type TCGA, cache=TRUE}
+
+nb_model = stan_model(here("stan",sprintf("%s.stan", "negBinomial_tidy")))
+
+set.seed(1325364)
+counts_stan = 
+  counts_TCGA %>%
+  filter(!filt_for_calc)  %>%
+  inner_join( (.) %>% distinct(ens_iso) %>% sample_n(500) ) %>%
+  
+  left_join(
+    (.) %>% 
+    distinct(sample, ens_iso, `read count normalised`) %>% 
+    count(ens_iso) %>% 
+    mutate(end = cumsum(n)) %>%
+    mutate(start = c(1, .$end %>% rev() %>% `[` (-1) %>% rev %>% `+` (1)))
+  ) %>% 
+  arrange(ens_iso) 
+
+data_for_stan = list(
+  N = counts_stan %>% nrow,
+  G = counts_stan %>% distinct(ens_iso) %>% nrow,
+  S = counts_stan %>% distinct(sample) %>% nrow,
+  symbol_start_end = counts_stan %>% distinct(start, end) %>% select(start, end),
+  counts = counts_stan %>% select(`read count normalised`) %>% pull(1),
+  sample_idx = 
+    counts_stan %>%
+    mutate(sample = factor(sample)) %>% 
+    mutate(sample_idx = as.integer(sample)) %>% 
+    select(sample_idx) %>%
+    pull(1),
+
+  # Info on data set
+  omit_data = 0,
+  generate_quantities = 1,
+  is_prior_asymetric = 1
+)
+
+# fit =
+#   sampling(
+#       nb_model,
+#     data = data_for_stan,
+#     chains=4, iter=500
+# )
+# fit_parsed = fit %>% spread_draws(lambda[G], sigma[G], sigma_raw[G], sigma_raw_gen[G])
+#fit %>% summary() %$% summary %>% as_tibble(rownames="par")
+
+
+load("fit_parsed_500_genes_TCGA_leukimia_18022019.RData")
+
+
+fit_parsed %>% 
+  mean_qi() %>% 
+  
+  left_join(
+    fit_parsed %>% group_by(G) %>% do( (.) %>% head(n=1) ) %>% ungroup() %>% select(G, sigma_raw_gen) %>% rename(gen_quant = sigma_raw_gen)
+  ) %>%
+  
+  left_join(
+    counts_stan %>% distinct(ens_iso) %>% mutate(G=1:n())
+  ) %>%
+  gather(is_real, my_sigma,  c("sigma_raw", "gen_quant")) %>%
+  ggplot(aes(x=lambda, y=my_sigma, lable=ens_iso, color=is_real)) + geom_point() +
+	stat_function(
+		fun = function(x) {
+		  inflection = fit %>% rstan::extract(pars="sigma_inflection") %$% sigma_inflection %>% median()
+		  slope =  fit %>% rstan::extract(pars="sigma_slope") %>% as.data.frame %>% as_tibble %>% pull(1) %>% median
+		  y_cross = fit %>% rstan::extract(pars="sigma_y_cross") %$% sigma_y_cross %>% median()
+		  b0 = -inflection * slope;
+			y_cross * (1 + exp(-b0)) / ( 1 + exp(- ( b0 + x * slope ) ) ) ;
+		}, 
+		geom="line"
+	)
+		
+fit_predicted = fit_parsed %>% 
+  mean_qi() %>%
+  left_join(
+    counts_stan %>% distinct(ens_iso) %>% mutate(G=1:n())
+  ) %>%
+  left_join(
+    counts_stan %>% select(ens_iso, `read count normalised`)
+  ) %>% 
+  do_parallel_start(40, "ens_iso") %>%
+ 	do({
+ 	  
+ 	  `%>%` = magrittr::`%>%`
+		library(tidyverse)
+		library(magrittr)
+ 	  
+ 	  (.) %>%
+    group_by(ens_iso) %>%
+    do(
+      (.) %>%
+      arrange(`read count normalised`) %>%
+      mutate(
+      	predicted_NB = 
+      		qnbinom(
+        		ppoints(`read count normalised`), 
+        		size=.$sigma %>% unique, 
+        		mu=.$lambda %>% unique %>% exp
+        		)
+      ) 
+    ) %>%
+    ungroup() 
+ 	}) %>%
+  do_parallel_end() %>%
+  mutate(`log of error` = (`read count normalised` - predicted_NB) %>% abs %>% `+` (1) %>% log) %>%
+  mutate(`error of log` = (log(`read count normalised` + 1) - log(predicted_NB + 1)) %>% abs )
+
+```
+
+Plot worst predictions
+
+```{r}
+fit_predicted %>%
+  inner_join( 
+    (.) %>%
+      filter(lambda > log(100)) %>% 
+      group_by(ens_iso) %>% 
+      summarise(`error mean` = `error of log` %>% mean) %>% 
+      arrange(`error mean` %>% desc) %>% 
+      select(ens_iso) %>% 
+      head(20)
+  ) %>%
+  ggplot(aes(y = `read count normalised` + 1, x = predicted_NB + 1)) + 
+  geom_point() + 
+  facet_wrap(~ ens_iso, scale="free") + 
+  geom_abline(slope = 1, intercept=0) + scale_y_log10() + scale_x_log10() + my_theme
+
+```
+
+Plot errors in rank
+
+```{r}
+fit_predicted %>%
+    group_by(ens_iso, lambda) %>% 
+    summarise(`error mean` = `error of log` %>% mean) %>%
+    ungroup() %>%
+    mutate(ens_iso = factor(ens_iso, levels= (.) %>% arrange(`error mean` %>% desc) %>% pull(ens_iso))) %>%
+    ggplot(aes(x=ens_iso, y=`error mean`, color = lambda)) + geom_point()
+```
 
 

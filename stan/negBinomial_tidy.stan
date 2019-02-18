@@ -76,7 +76,7 @@ parameters {
 }
 transformed parameters {
   real<lower=0> lambda_sigma = lambda_sigma_raw / 1000;
-  vector[G] sigma = 1.0 ./ sqrt(sigma_raw);
+  vector[G] sigma = 1.0 ./ sigma_raw;
 
   // Sigma linear model
   //vector[G] sigma_mu = exp(lambda * sigma_slope + sigma_0); //the expected values (linear predictor)
@@ -109,6 +109,13 @@ model {
         exposure_rate[sample_idx[symbol_start_end[g,1]:symbol_start_end[g,2]]] + lambda[g],
         sigma[g]
       );
+
+}
+generated quantities{
+  vector<lower=0>[G] sigma_raw_gen;
+
+  for(g in 1:G) sigma_raw_gen[g] = gamma_rng(sigma_alpha[g],sigma_beta[g]);
+
 
 }
 // generated quantities{
