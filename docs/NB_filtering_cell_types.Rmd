@@ -75,7 +75,7 @@ counts =
   		library(magrittr)
     	
     	(.) %>%
-  			group_by(sample, symbol, `Cell type formatted`) %>%
+  			group_by(sample, symbol, `Cell type formatted`,  `Data base`) %>%
   			summarise(`read count` = `read count` %>% median(na.rm = T)) %>%
   			ungroup() 
   }) %>%
@@ -88,6 +88,7 @@ counts =
 			value_column = "read count",cpm_threshold = 0.5
 		) %>%
   mutate(`read count normalised` = `read count normalised` %>% as.integer) %>%
+  mutate(`read count normalised log` = `read count normalised` %>% `+` (1) %>% log) %>%
 
   # Mark the bimodal distributions
   do_parallel_start(40, "symbol") %>%
@@ -103,29 +104,53 @@ counts =
 		    mutate(
   		  `bimodal p-value` =
   		    (.) %>%
-    		  pull(`read count normalised`) %>%
-    		  `+` (1) %>%
-    		  log %>%
+    		  pull(`read count normalised log`) %>%
     		  diptest::dip.test() %$%
-    		  `p.value`
+    		  `p.value`,
+  		  
+  		  `bimodal coefficient` = 
+  		     (.) %>%
+  		    pull(`read count normalised log`) %>%
+  		    modes::bimodality_coefficient(),
+  		  
+  		  `anova p-value` = 
+  		      ifelse(
+  		        (.) %>% distinct(`Data base`) %>% nrow > 1,
+  		        (.) %>% aov(`read count normalised log` ~ `Cell type formatted` + `Data base`, .) %>% anova %$%   		    `Pr(>F)` %>%  `[` (1),
+  		        (.) %>% aov(`read count normalised log` ~ `Cell type formatted`, .) %>% anova %$% `Pr(>F)` %>% `[` (1)
+  		      ) 
 		    )
 		  ) %>%
 		  ungroup()
 
 	}) %>%
-  do_parallel_end()
-  
-	  
+  do_parallel_end() %>% 
+  mutate(
+    `anova p-value` = ifelse(`anova p-value` == "NaN", 1, `anova p-value`),
+    `bimodal coefficient` = ifelse(`bimodal coefficient` == "NaN", 0, `bimodal coefficient`)
+  ) %>%
+  mutate(
+    `hard bimodality` =
+      (`bimodal p-value` < 0.05) + 
+      (`bimodal coefficient` > 0.6666667) + 
+      (`anova p-value` < 0.05 ) >= 
+      2
+  ) %>%
+  mutate(`soft bimodality` = `anova p-value` < 0.0001)
 ```
+
+Inference 
 
 ```{r predict_values cell_type, cache=TRUE}
 
 nb_model = stan_model(here("stan",sprintf("%s.stan", "negBinomial_tidy")))
 
+set.seed(1325364)
 counts_stan = 
   counts %>%
   filter(!filt_for_calc) %>%
-  inner_join( (.) %>% distinct(symbol) %>% sample_n(500) ) %>%
+  filter(!`hard bimodality`) %>%
+  #inner_join( (.) %>% distinct(symbol) %>% sample_n(500) ) %>%
   
   left_join(
     (.) %>% 
@@ -155,97 +180,123 @@ data_for_stan = list(
   is_prior_asymetric = 1
 )
 
-fit =
-  sampling(
-    nb_model,
-    data = data_for_stan, 
-    chains=4, iter=500
-)
+# fit =
+#   sampling(
+#       nb_model,
+#     data = data_for_stan, 
+#     chains=4, iter=500
+# )
+# fit_parsed = fit %>% spread_draws(lambda[G], sigma[G], sigma_raw[G]) 
+#fit %>% summary() %$% summary %>% as_tibble(rownames="par")
 
-fit_parsed = fit %>% spread_draws(lambda[G], sigma[G], sigma_raw[G]) 
 
-fit_parsed %>% mean_qi() %>% ggplot(aes(x=lambda, y=sigma_raw)) + geom_point() +
-  stat_function(
-    fun=function(x)
-      exp(
-       fit %>% extract(pars="sigma_0") %$% sigma_0 %>% median() +
-        x * fit %>% extract(pars="sigma_slope") %$% sigma_slope %>% median()
-      ), geom="line")
+load("fit_parsed_all_genes_t_cell_18022019.RData")
+
 
 fit_parsed %>% 
+  mean_qi() %>% 
+  left_join(
+    counts_stan %>% distinct(symbol, `bimodal p-value`) %>% mutate(G=1:n())
+  ) %>%
+  ggplot(aes(x=lambda, y=sigma_raw, lable=symbol, bimodal=`bimodal p-value`)) + geom_point() +
+	stat_function(
+		fun = function(x) {
+		  inflection = fit %>% rstan::extract(pars="sigma_inflection") %$% sigma_inflection %>% median()
+		  slope =  fit %>% rstan::extract(pars="sigma_slope") %>% as.data.frame %>% as_tibble %>% pull(1) %>% median
+		  y_cross = fit %>% rstan::extract(pars="sigma_y_cross") %$% sigma_y_cross %>% median()
+		  b0 = -inflection * slope;
+			y_cross * (1 + exp(-b0)) / ( 1 + exp(- ( b0 + x * slope ) ) ) ;
+		}, 
+		geom="line"
+	)
+		
+fit_predicted = fit_parsed %>% 
   mean_qi() %>%
-  head(n=10) %>%
   left_join(
     counts_stan %>% distinct(symbol) %>% mutate(G=1:n())
   ) %>%
   left_join(
     counts_stan %>% select(symbol, `read count normalised`)
   ) %>% 
-  group_by(symbol) %>%
-  do(
-    (.) %>%
-    arrange(`read count normalised`) %>%
-    mutate(
-    	predicted_NB = 
-    		qnbinom(
-      		ppoints(`read count normalised`), 
-      		size=.$sigma %>% unique, 
-      		mu=.$lambda %>% unique %>% exp
-      		)
-    ) 
-  ) %>%
-  ungroup() %>%
-  ggplot(aes(y = `read count normalised`, x = predicted_NB)) + 
-  geom_point() + 
-  facet_wrap(~ symbol, scale="free") + 
-  geom_abline(slope = 1, intercept=0) + scale_y_log10() + scale_x_log10() 
-
+  do_parallel_start(40, "symbol") %>%
+ 	do({
+ 	  
+ 	  `%>%` = magrittr::`%>%`
+		library(tidyverse)
+		library(magrittr)
+ 	  
+ 	  (.) %>%
+    group_by(symbol) %>%
+    do(
+      (.) %>%
+      arrange(`read count normalised`) %>%
+      mutate(
+      	predicted_NB = 
+      		qnbinom(
+        		ppoints(`read count normalised`), 
+        		size=.$sigma %>% unique, 
+        		mu=.$lambda %>% unique %>% exp
+        		)
+      ) 
+    ) %>%
+    ungroup() 
+ 	}) %>%
+  do_parallel_end() %>%
+  mutate(`log of error` = (`read count normalised` - predicted_NB) %>% abs %>% `+` (1) %>% log) %>%
+  mutate(`error of log` = (log(`read count normalised` + 1) - log(predicted_NB + 1)) %>% abs )
 
 ```
 
-## Statistics
+Plot worst predictions
+
+```{r}
+fit_predicted %>%
+  inner_join( 
+    (.) %>%
+      filter(lambda > log(100)) %>% 
+      group_by(symbol) %>% 
+      summarise(`error mean` = `error of log` %>% mean) %>% 
+      arrange(`error mean` %>% desc) %>% 
+      select(symbol) %>% 
+      head(20)
+  ) %>%
+  ggplot(aes(y = `read count normalised` + 1, x = predicted_NB + 1)) + 
+  geom_point() + 
+  facet_wrap(~ symbol, scale="free") + 
+  geom_abline(slope = 1, intercept=0) + scale_y_log10() + scale_x_log10() + my_theme
+
+```
+
+Plot errors in rank
+
+```{r}
+fit_predicted %>%
+    group_by(symbol, lambda) %>% 
+    summarise(`error mean` = `error of log` %>% mean) %>%
+    ungroup() %>%
+    mutate(symbol = factor(symbol, levels= (.) %>% arrange(`error mean` %>% desc) %>% pull(symbol))) %>%
+    ggplot(aes(x=symbol, y=`error mean`, color = lambda)) + geom_point()
+```
+
+Plot single gene
 
 ```{r}
 
-(counts.predicted %>%
-  gather(model, predicted, c("predicted_NB", "predicted_SH")) %>%
-  mutate(err = (`read count normalised` - predicted) %>% abs) %>%
-  mutate(err_log = err %>% `+` (1) %>% log) %>%
-  group_by(symbol, model) %>%
-  summarise(err_sum = err_log %>% sum) %>%
-  ungroup %>%
-  spread(model, err_sum) %>%
-  mutate(err_diff = predicted_SH - predicted_NB) %>%
-  #gather(model, err_sum, c("predicted_NB", "predicted_SH")) %>%
-  mutate(symbol = factor(symbol, levels = (.) %>% distinct(symbol, err_diff) %>% arrange(err_diff %>% desc) %>% pull(symbol))) %>%
-  ggplot(aes(x = symbol, y=err_diff)) + geom_point() ) %>% plotly::ggplotly()
-  
+counts %>% filter(symbol == "HCG23") %>% 
+{
+  ((.) %>% ggplot(aes(x=sample, y = `read count normalised`+1, color=`Cell type formatted`, shape = `Data base`)) + geom_point() + scale_y_log10()) %>% print()
+  (.)
+} %>%
+pull(`read count normalised`) %>%
+`+` (1) %>%
+log %>% 
+  { (.) %>% modes::bimodality_coefficient() %>% print; (.)} %>%
+  diptest::dip.test() %$% `p.value`
 
 ```
 
-## Plot
 
-```{r plot cell_type, echo=FALSE, fig.width=12, fig.height=12}
+# TCGA - leukemia
 
-counts.predicted %>%
-  filter(symbol=="RPS12") %>%
-	gather(model, predicted, c("predicted_NB", "predicted_SH")) %>%
-	ggplot(aes(x=`predicted` + 1, y=`read count normalised` + 1, label=symbol, color=model)) + 
-	geom_abline(intercept = 0, slope = 1, color="grey") + 
-	geom_line() + 
-	facet_wrap(~ symbol, scales = "free")  +
-	expand_limits(y=1, x=1) + 
-	scale_y_log10() +
-	scale_x_log10() +
-	my_theme 
-   
 
-counts.predicted %>%
-	gather(model, value, c("read count normalised", "predicted_NB", "predicted_SH")) %>%
-	ggplot(aes(x=model, y=value + 1, color=model)) + 
-	geom_jitter() + 
-	facet_wrap(~ symbol, scales = "free")  +
-	scale_y_log10() +
-	my_theme 
 
-```
