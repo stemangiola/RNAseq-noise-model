@@ -338,7 +338,7 @@ set.seed(1325364)
 counts_stan = 
   counts_TCGA %>%
   #filter(!filt_for_calc)  %>%
-  inner_join( (.) %>% distinct(ens_iso) %>% sample_n(1000) ) %>%
+  inner_join( (.) %>% distinct(ens_iso) %>% sample_n(500) ) %>%
   
   left_join(
     (.) %>% 

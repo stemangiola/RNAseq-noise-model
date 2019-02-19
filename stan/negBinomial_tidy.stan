@@ -58,8 +58,8 @@ data {
 parameters {
 
   // Overall properties of the data
-  ordered[2] lambda_mu; // So is compatible with logGamma prior
-  vector<lower=0>[2] lambda_sigma;
+  ordered[2] lambda_mu_raw; // So is compatible with logGamma prior
+  vector<lower=0>[2] lambda_sigma_raw;
   real<lower=0, upper=1> lambda_prop;
 
   vector[S] exposure_rate;
@@ -87,17 +87,20 @@ transformed parameters {
   vector[G] sigma_alpha = sigma_mu .* sigma_mu / sigma_sigma; //shape parameter for the gamma distribution
   vector[G] sigma_beta = sigma_mu / sigma_sigma; //rate parameter for the gamma distribution
 
-  vector[2] lambda_alpha = lambda_mu .* lambda_mu ./ lambda_sigma / 10;
-  vector[2] lambda_beta = lambda_mu ./ lambda_sigma / 10;
+  vector[2] lambda_mu = exp(lambda_mu_raw);
+  vector[2] lambda_sigma = exp(lambda_sigma_raw);
+
+  vector[2] lambda_alpha = lambda_mu .* lambda_mu ./ lambda_sigma;
+  vector[2] lambda_beta = lambda_mu ./ lambda_sigma;
 
 
 }
 model {
 
   // Overall properties of the data
-  lambda_mu[1] ~ cauchy(0,2.5);
-  lambda_mu[2] ~ normal(4,2);
-  lambda_sigma ~ normal(0,1);
+  lambda_mu_raw[1] ~ cauchy(0,2.5);
+  lambda_mu_raw[2] ~ normal(6,2);
+  lambda_sigma_raw ~ normal(0,2);
   lambda_prop ~ beta(1, 10);
 
   //sigma_raw ~ normal(0,1);
