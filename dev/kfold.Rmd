@@ -22,6 +22,11 @@ registerDoParallel()
 
 rstan_options(auto_write = TRUE)
 options(mc.cores = parallel::detectCores())
+
+cache_dir = here("local_temp_data","kfold")
+if(!dir.exists(cache_dir)) {
+  dir.create(cache_dir)
+}
 ```
 
 
@@ -71,7 +76,7 @@ for(i in 1:nrow(model_defs)) {
   data_list[[i]]$holdout = (folds == model_defs$fold[i])
 }
 
-fits = sampling_multi(models_list, data_list)
+fits = sampling_multi(models_list, data_list, cache_dir = cache_dir, cores = 6)
 ```
 
 

@@ -17,6 +17,7 @@
 #' @param map_fun_dependencies a list of package names that need te be loaded for
 #'   `map_fun` to run. IMPORTANT: when developing packages, you need to install
 #'   the latest version (the packages are loaded from the default library)
+#' @param cache_dir if not NULL, fits will be cached in this directory
 #' @param ... Other params to be passed the [sampling()].
 #'
 #' @return A list of length `length(data)` containing the result of applying
@@ -26,9 +27,13 @@ sampling_multi <- function(models, data, map_fun = sampling_multi_noop, combine_
                            init = NULL, control = NULL, init_per_item = NULL, control_per_item = NULL,
                            map_fun_dependencies = c(),
                            R_session_init_expr = NULL,
+                           cache_dir = NULL,
                            ids_to_compute = 1:length(data),  ...) {
 
   #TODO: argument validation
+  if(!is.null(cache_dir) && !dir.exists(cache_dir)) {
+    stop(paste0("Cache dir '", cache_dir,"'  does not exist"))
+  }
 
   cl <- parallel::makeCluster(cores, useXDR = FALSE)
   on.exit(parallel::stopCluster(cl))
@@ -74,10 +79,25 @@ sampling_multi <- function(models, data, map_fun = sampling_multi_noop, combine_
 
 
   fit_fun <- function(i) {
-    out <- do.call(rstan::sampling, args = .dotlists_per_item[[i]])
+    cached = FALSE
+    if(!is.null(cache_dir)) {
+      filename = sprintf("%s/%06d.rds",cache_dir,i)
+      if(file.exists(filename)) {
+        single_fit <- readRDS(filename)
+        cached = TRUE
+      }
+    }
+
+    if(!cached) {
+      single_fit <- do.call(rstan::sampling, args = .dotlists_per_item[[i]])
+    }
+
+    if(!is.null(cache_dir)) {
+      saveRDS(single_fit, filename)
+    }
 
     #TODO should catch error from map_fun
-    map_fun(out, data_id, chain_id)
+    map_fun(single_fit, data_id, chain_id)
   }
 
 
