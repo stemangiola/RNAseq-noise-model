@@ -441,6 +441,39 @@ fit_predicted = fit_parsed %>%
 
 ```
 
+```{r}
+
+# Test for near 0 genes
+
+y = fit_parsed %>% 
+    mean_qi() %>% 
+    left_join(
+        counts_stan %>% 
+          distinct(ens_iso, filt_for_calc) %>% 
+          mutate(G=1:n())
+    ) %>% 
+  filter(!filt_for_calc) %>% pull(lambda)
+
+fit_0s = stan(
+  data = list(y = y, N = y %>% length),
+  model_code = "
+    data{
+    int N;
+    vector[N] y;
+    }
+    parameters{
+    real mu;
+    real<lower=0> sigma;
+    real skew;
+    }
+    model{
+     y ~ skew_normal(mu, sigma, skew);
+    }
+  " 
+)
+
+```
+
 Plot worst predictions
 
 ```{r}
