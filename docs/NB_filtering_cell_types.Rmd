@@ -337,7 +337,7 @@ nb_model = stan_model(here("stan",sprintf("%s.stan", "negBinomial_tidy")))
 set.seed(1325364)
 counts_stan = 
   counts_TCGA %>%
-  filter(!filt_for_calc)  %>%
+  #filter(!filt_for_calc)  %>%
   inner_join( (.) %>% distinct(ens_iso) %>% sample_n(500) ) %>%
   
   left_join(
@@ -368,14 +368,14 @@ data_for_stan = list(
   is_prior_asymetric = 1
 )
 
-# fit =
-#   sampling(
-#       nb_model,
-#     data = data_for_stan,
-#     chains=4, iter=500
-# )
-# fit_parsed = fit %>% spread_draws(lambda[G], sigma[G], sigma_raw[G], sigma_raw_gen[G])
-#fit %>% summary() %$% summary %>% as_tibble(rownames="par")
+fit =
+  sampling(
+      nb_model,
+    data = data_for_stan,
+    chains=4, iter=300, warmup=200
+)
+fit_parsed = fit %>% spread_draws(lambda[G], sigma[G], sigma_raw[G], sigma_raw_gen[G])
+fit %>% summary() %$% summary %>% as_tibble(rownames="par")
 
 
 load("fit_parsed_500_genes_TCGA_leukimia_18022019.RData")

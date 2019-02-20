@@ -81,8 +81,8 @@ transformed parameters {
   // Sigma linear model
   //vector[G] sigma_mu = exp(lambda * sigma_slope + sigma_0); //the expected values (linear predictor)
   vector[G] sigma_mu = gen_inv_logit(sigma_slope, lambda, sigma_inflection, sigma_y_cross) ;
-  vector[G] sigma_alpha = sigma_mu .* sigma_mu / sigma_sigma; //shape parameter for the gamma distribution
-  vector[G] sigma_beta = sigma_mu / sigma_sigma; //rate parameter for the gamma distribution
+  vector[G] sigma_alpha = sigma_mu .* sigma_mu / sigma_sigma / 10; //shape parameter for the gamma distribution
+  vector[G] sigma_beta = sigma_mu / sigma_sigma / 10; //rate parameter for the gamma distribution
 
 }
 model {
@@ -97,10 +97,11 @@ model {
   sigma_inflection ~ normal(0,2);
   sigma_y_cross ~ cauchy(0,2);
   sigma_slope ~ normal(0,1);
-  sigma_sigma ~ cauchy(0,2.5);
+  sigma_sigma ~ normal(0,2);
 
   // Gene-wise properties of the data
-  lambda ~ normal_or_gammaLog(lambda_mu, lambda_sigma, is_prior_asymetric);
+  //lambda ~ normal_or_gammaLog(lambda_mu, lambda_sigma, is_prior_asymetric);
+  lambda ~ cauchy(0,2.5);
   sigma_raw ~ gamma(sigma_alpha,sigma_beta);
 
   // Sample from data
