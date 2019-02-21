@@ -58,8 +58,11 @@ data {
 parameters {
 
   // Overall properties of the data
-  ordered[2] lambda_mu_raw; // So is compatible with logGamma prior
-  vector<lower=0>[2] lambda_sigma_raw;
+  real lambda_mu_zeros;
+  real<lower=0> lambda_sigma_zeros;
+  real<upper=0> lambda_skew_zeros;
+  real<lower=lambda_mu_zeros> lambda_mu_raw;
+  real lambda_sigma_raw;
   real<lower=0, upper=1> lambda_prop;
 
   vector[S] exposure_rate;
@@ -84,24 +87,25 @@ transformed parameters {
   // Sigma linear model
   //vector[G] sigma_mu = exp(lambda * sigma_slope + sigma_0); //the expected values (linear predictor)
   vector[G] sigma_mu = gen_inv_logit(sigma_slope, lambda, sigma_inflection, sigma_y_cross) ;
-  vector[G] sigma_alpha = sigma_mu .* sigma_mu / sigma_sigma; //shape parameter for the gamma distribution
-  vector[G] sigma_beta = sigma_mu / sigma_sigma; //rate parameter for the gamma distribution
+  vector[G] sigma_alpha = sigma_mu .* sigma_mu / sigma_sigma /10; //shape parameter for the gamma distribution
+  vector[G] sigma_beta = sigma_mu / sigma_sigma /10; //rate parameter for the gamma distribution
 
-  vector[2] lambda_mu = exp(lambda_mu_raw);
-  vector[2] lambda_sigma = exp(lambda_sigma_raw);
-
-  vector[2] lambda_alpha = lambda_mu .* lambda_mu ./ lambda_sigma;
-  vector[2] lambda_beta = lambda_mu ./ lambda_sigma;
+  real lambda_mu = exp(lambda_mu_raw);
+  real lambda_sigma = exp(lambda_sigma_raw);
+  real lambda_alpha = lambda_mu * lambda_mu / lambda_sigma;
+  real lambda_beta = lambda_mu / lambda_sigma;
 
 
 }
 model {
 
   // Overall properties of the data
-  lambda_mu_raw[1] ~ cauchy(0,2.5);
-  lambda_mu_raw[2] ~ normal(6,2);
+  lambda_mu_zeros ~ normal(0,1);
+  lambda_sigma_zeros ~ normal(0,2);
+  lambda_skew_zeros ~ normal(0,2);
+  lambda_mu_raw ~ normal(8,2);
   lambda_sigma_raw ~ normal(0,2);
-  lambda_prop ~ beta(1, 10);
+  lambda_prop ~ beta(4, 12);
 
   //sigma_raw ~ normal(0,1);
   exposure_rate ~ normal(0,1);
@@ -110,15 +114,15 @@ model {
   sigma_inflection ~ normal(0,2);
   sigma_y_cross ~ cauchy(0,2);
   sigma_slope ~ normal(0,1);
-  sigma_sigma ~ cauchy(0,2.5);
+  sigma_sigma ~ normal(0,2);
 
   // Gene-wise properties of the data
   for(g in 1:G)
     target +=
       log_mix(
         lambda_prop,
-        gamma_log_lpdf(lambda[g] | lambda_alpha[1], lambda_beta[1]),
-        gamma_log_lpdf(lambda[g] | lambda_alpha[2], lambda_beta[2])
+        skew_normal_lpdf(lambda[g] | lambda_mu_zeros, lambda_sigma_zeros, lambda_skew_zeros),
+        gamma_log_lpdf(lambda[g] | lambda_mu_raw, lambda_sigma_raw)
       );
 
   sigma_raw ~ gamma(sigma_alpha,sigma_beta);

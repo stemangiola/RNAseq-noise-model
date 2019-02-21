@@ -338,7 +338,7 @@ set.seed(1325364)
 counts_stan = 
   counts_TCGA %>%
   #filter(!filt_for_calc)  %>%
-  inner_join( (.) %>% distinct(ens_iso) %>% sample_n(500) ) %>%
+  inner_join( (.) %>% distinct(ens_iso) %>% sample_n(1000) ) %>%
   
   left_join(
     (.) %>% 
@@ -372,7 +372,7 @@ fit =
   sampling(
       nb_model,
     data = data_for_stan,
-    chains=4, iter=500
+    chains=4, iter=500, warmup=400
 )
 fit_parsed = fit %>% spread_draws(lambda[G], sigma[G], sigma_raw[G], sigma_raw_gen[G])
 # fit %>% summary() %$% summary %>% as_tibble(rownames="par")
