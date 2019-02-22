@@ -46,6 +46,9 @@ sampling_multi <- function(models, data, map_fun = sampling_multi_noop, combine_
     } else {
       model = models
     }
+    if(class(model) != "stanmodel") {
+      stop(paste0("Model for data_id ", data_id," is not of class 'stanmodel'"))
+    }
 
     for(chain_id in 1:chains) {
 
@@ -79,25 +82,60 @@ sampling_multi <- function(models, data, map_fun = sampling_multi_noop, combine_
 
 
   fit_fun <- function(i) {
-    cached = FALSE
+    cached <-  FALSE
+    not_cached_msg <- ""
+    arg_list <- .dotlists_per_item[[i]]
     if(!is.null(cache_dir)) {
-      filename = sprintf("%s/%06d.rds",cache_dir,i)
+      filename <-  sprintf("%s/%06d.rds",cache_dir,i)
       if(file.exists(filename)) {
-        single_fit <- readRDS(filename)
-        cached = TRUE
+        cached_data <- readRDS(filename)
+
+        if(!is.list(cached_data)) {
+          not_cached_msg <- "Unexpected data format"
+          cached <-  FALSE
+        } else {
+          fit_from_cache <- cached_data$fit
+
+          model <- arg_list[[1]]
+
+          if(class(model) != "stanmodel") {
+            stop("Argument 1 is not a stan model")
+          }
+
+          if(is.null(cached_data$data) || is.null(fit_from_cache)) {
+            not_cached_msg <- "Does not contain fit or data"
+            cached <-  FALSE
+          } else if(class(fit_from_cache) != "stanfit") {
+            not_cached_msg <- "Not a stanfit"
+            cached <-  FALSE
+          } else if(model@model_code != fit_from_cache@stanmodel@model_code) {
+            not_cached_msg <- "Model code changed"
+            cached <-  FALSE
+          } else if(!identical(cached_data$data, arg_list$data)) {
+            not_cached_msg <- "Different data"
+            cached <-  FALSE
+          }
+          else {
+            single_fit <- fit_from_cache
+            cached <- TRUE
+          }
+        }
       }
     }
 
     if(!cached) {
-      single_fit <- do.call(rstan::sampling, args = .dotlists_per_item[[i]])
-    }
-
-    if(!is.null(cache_dir)) {
-      saveRDS(single_fit, filename)
+      single_fit <- do.call(rstan::sampling, args = arg_list)
+      if(!is.null(cache_dir)) {
+        saveRDS(list(data = arg_list$data, fit = single_fit), filename)
+      }
     }
 
     #TODO should catch error from map_fun
-    map_fun(single_fit, data_id, chain_id)
+    list(
+      cached = cached,
+      not_cached_msg = not_cached_msg,
+      result = map_fun(single_fit, data_id, chain_id)
+    )
   }
 
 
@@ -126,9 +164,20 @@ sampling_multi <- function(models, data, map_fun = sampling_multi_noop, combine_
   ids <- rep(ids_to_compute, each = chains)
   items <- ((rep(ids_to_compute, each = chains) - 1) * chains  + rep(1:chains, times = length(ids_to_compute)))
 
-  results_flat <-  parallel::parSapplyLB(cl, X = items, FUN = fit_fun)
+  results_raw <- parallel::parLapplyLB(cl, X = items, fun = fit_fun, chunk.size = 1)
+  results_flat <- purrr::map(results_raw, function(x) { x$result })
 
   results <- list()
+  if(!is.null(cache_dir)) {
+    cache_info <- purrr::map_dfr(results_raw, function(x) { data.frame(cached = x$cached, msg = x$not_cached_msg, stringsAsFactors = FALSE) })
+    cat(paste0(sum(cache_info$cached), " out of ", length(items), " chains read from cache\n"))
+    if(any(cache_info$msg != "")) {
+      cat("Reasons for ignoring cache:\n")
+      message_stats <- aggregate(cached ~ msg, cache_info, FUN = length, subset = cache_info$msg != "")
+      names(message_stats) <- c("message","count")
+      print(message_stats)
+    }
+  }
   for(i in 1:length(data)) {
     results[[i]] <- combine_fun(results_flat[ids == i])
   }
@@ -142,6 +191,8 @@ sampling_multi_noop <- function(fit, data_id, chain_id) {
 #' @return Returns a function to be used as `map_fun` in [sampling_multi()]
 #'   that stores all fits in RDS files
 sampling_multi_store_file_generator <- function(base_dir, base_name) {
+  force(base_dir)
+  force(base_name)
   function(fit, data_id, chain_id) {
     filename = paste0(base_dir,"/",base_name, "_", data_id, "_", chain_id,".rds")
     saveRDS(fit, filename)

@@ -182,10 +182,11 @@ generate_data_multinomial <- function(G, sums, sigma_prior_sigma = 2) {
       G = G,
       counts = counts,
       my_prior = c(0,0),
-      omit_data = 0,
+      holdout = array(0, N),
       exposure = rowSums(counts),
       is_prior_asymetric = 0,
-      generate_quantities = 0
+      generate_quantities = 0,
+      generate_log_lik = 1
     ),
     true = list(
       lambda_sigma = lambda_sigma,
@@ -225,10 +226,11 @@ generate_data_lognormal_multinomial <- function(G, sums, is_prior_assymetric = F
       G = G,
       counts = counts,
       my_prior = c(0,0),
-      omit_data = 0,
+      holdout = array(0, N),
       exposure = rowSums(counts),
       is_prior_asymetric = if(is_prior_assymetric) {1} else {0},
-      generate_quantities = 0
+      generate_quantities = 0,
+      generate_log_lik = 1.
     ),
     true = list(
       lambda_prior = lambda_prior,
@@ -264,8 +266,10 @@ generate_data_gamma_multinomial <- function(G, sums) {
       N = N,
       G = G,
       counts = counts,
-      omit_data = 0,
-      generate_quantities = 0
+      holdout = array(0, N),
+      generate_quantities = 0,
+      generate_log_lik = 1
+
     ),
     true = list(
       lambda = lambda,

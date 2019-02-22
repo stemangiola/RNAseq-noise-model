@@ -35,6 +35,7 @@ data {
   int<lower=1> G;
   int<lower=0> counts[N, G];
   int<lower=0, upper=1> generate_quantities;
+  int<lower=0, upper=1> generate_log_lik;
 
   //Set to 1 for each sample that is held out
   int<lower=0, upper=1> holdout[N];
@@ -43,6 +44,7 @@ data {
 transformed data {
   int<lower=0> N_gen = generate_quantities ? N : 0;
   int<lower=0> G_gen = generate_quantities ? G : 0;
+  int<lower=0> N_log_lik = generate_log_lik ? N : 0;
 
   vector[2*G] Q_lambda = Q_sum_to_zero_QR(G);
   int<lower=1> exposure[N];
@@ -84,7 +86,9 @@ generated quantities{
   int<lower=0> counts_gen_geneWise[N_gen,G_gen];
 
   vector[G_gen] lambda_gen;
-  vector[N_gen] log_lik;
+  vector[N_log_lik] log_lik;
+
+  nutno vyresit generate_log_lik
 
   if(generate_quantities) {
     // Sample gene wise rates
