@@ -332,41 +332,44 @@ counts_TCGA =
 
 ```{r predict_values cell_type TCGA, cache=TRUE}
 
+fileConn<-file("~/.R/Makevars")
+writeLines(c("CXX14FLAGS += -O3"), fileConn)
+close(fileConn)
 nb_model = stan_model(here("stan",sprintf("%s.stan", "negBinomial_tidy")))
 
 set.seed(1325364)
-counts_stan = 
-  counts_TCGA %>%
-  #filter(!filt_for_calc)  %>%
-  inner_join( (.) %>% distinct(ens_iso) %>% sample_n(1000) ) %>%
+  counts_stan = 
+    counts_TCGA %>%
+    #filter(!filt_for_calc)  %>%
+    inner_join( (.) %>% distinct(ens_iso) %>% sample_n(1000) ) %>%
+    
+    left_join(
+      (.) %>% 
+      distinct(sample, ens_iso, `read count normalised`) %>% 
+      count(ens_iso) %>% 
+      mutate(end = cumsum(n)) %>%
+      mutate(start = c(1, .$end %>% rev() %>% `[` (-1) %>% rev %>% `+` (1)))
+    ) %>% 
+    arrange(ens_iso) 
   
-  left_join(
-    (.) %>% 
-    distinct(sample, ens_iso, `read count normalised`) %>% 
-    count(ens_iso) %>% 
-    mutate(end = cumsum(n)) %>%
-    mutate(start = c(1, .$end %>% rev() %>% `[` (-1) %>% rev %>% `+` (1)))
-  ) %>% 
-  arrange(ens_iso) 
-
-data_for_stan = list(
-  N = counts_stan %>% nrow,
-  G = counts_stan %>% distinct(ens_iso) %>% nrow,
-  S = counts_stan %>% distinct(sample) %>% nrow,
-  symbol_start_end = counts_stan %>% distinct(start, end) %>% select(start, end),
-  counts = counts_stan %>% select(`read count normalised`) %>% pull(1),
-  sample_idx = 
-    counts_stan %>%
-    mutate(sample = factor(sample)) %>% 
-    mutate(sample_idx = as.integer(sample)) %>% 
-    select(sample_idx) %>%
-    pull(1),
-
-  # Info on data set
-  omit_data = 0,
-  generate_quantities = 1,
-  is_prior_asymetric = 1
-)
+  data_for_stan = list(
+    N = counts_stan %>% nrow,
+    G = counts_stan %>% distinct(ens_iso) %>% nrow,
+    S = counts_stan %>% distinct(sample) %>% nrow,
+    symbol_start_end = counts_stan %>% distinct(start, end) %>% select(start, end),
+    counts = counts_stan %>% select(`read count normalised`) %>% pull(1),
+    sample_idx = 
+      counts_stan %>%
+      mutate(sample = factor(sample)) %>% 
+      mutate(sample_idx = as.integer(sample)) %>% 
+      select(sample_idx) %>%
+      pull(1),
+  
+    # Info on data set
+    omit_data = 0,
+    generate_quantities = 1,
+    is_prior_asymetric = 1
+  )
 
 fit =
   sampling(
@@ -374,6 +377,7 @@ fit =
     data = data_for_stan,
     chains=4, iter=500, warmup=400
 )
+save(fit, file="temp.RData")
 fit_parsed = fit %>% spread_draws(lambda[G], sigma[G], sigma_raw[G], sigma_raw_gen[G])
 # fit %>% summary() %$% summary %>% as_tibble(rownames="par")
 # 
