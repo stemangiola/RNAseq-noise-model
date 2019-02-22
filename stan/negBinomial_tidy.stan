@@ -58,8 +58,9 @@ data {
 parameters {
 
   // Overall properties of the data
-  real<lower=0> lambda_mu; // So is compatible with logGamma prior
-  real<lower=0> lambda_sigma_raw;
+  real lambda_mu; // So is compatible with logGamma prior
+  real<lower=0> lambda_sigma;
+  real lambda_skew;
   vector[S] exposure_rate;
 
   // Gene-wise properties of the data
@@ -75,7 +76,6 @@ parameters {
 
 }
 transformed parameters {
-  real<lower=0> lambda_sigma = lambda_sigma_raw / 1000;
   vector[G] sigma = 1.0 ./ sigma_raw;
 
   // Sigma linear model
@@ -88,8 +88,10 @@ transformed parameters {
 model {
 
   // Overall properties of the data
-  lambda_mu ~ gamma(3,2);
-  lambda_sigma_raw ~ normal(0,1);
+  lambda_mu ~ normal(0,2);
+  lambda_sigma ~ normal(0,2);
+  lambda_skew ~ normal(0,2);
+
   //sigma_raw ~ normal(0,1);
   exposure_rate ~ normal(0,1);
   sum(exposure_rate) ~ normal(0, 0.001 * S);
@@ -100,8 +102,8 @@ model {
   sigma_sigma ~ normal(0,2);
 
   // Gene-wise properties of the data
-  //lambda ~ normal_or_gammaLog(lambda_mu, lambda_sigma, is_prior_asymetric);
-  lambda ~ cauchy(0,2.5);
+  // lambda ~ normal_or_gammaLog(lambda_mu, lambda_sigma, is_prior_asymetric);
+  lambda ~  skew_normal(lambda_mu,lambda_sigma, lambda_skew);
   sigma_raw ~ gamma(sigma_alpha,sigma_beta);
 
   // Sample from data

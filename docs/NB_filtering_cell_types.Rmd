@@ -331,7 +331,11 @@ counts_TCGA =
 ```
 
 ```{r predict_values cell_type TCGA, cache=TRUE}
-
+file("~/.R/Makevars") %>% {
+  writeLines(c("CXX14FLAGS += -O3"), (.)); 
+  (.)
+} %>%
+close(.)
 nb_model = stan_model(here("stan",sprintf("%s.stan", "negBinomial_tidy")))
 
 set.seed(1325364)
