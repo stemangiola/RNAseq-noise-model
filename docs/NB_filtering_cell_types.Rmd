@@ -399,11 +399,9 @@ fit_parsed %>%
   ggplot(aes(x=lambda, y=my_sigma, lable=ens_iso, color=is_real)) + geom_point() +
 	stat_function(
 		fun = function(x) {
-		  inflection = fit %>% rstan::extract(pars="sigma_inflection") %$% sigma_inflection %>% median()
 		  slope =  fit %>% rstan::extract(pars="sigma_slope") %>% as.data.frame %>% as_tibble %>% pull(1) %>% median
-		  y_cross = fit %>% rstan::extract(pars="sigma_y_cross") %$% sigma_y_cross %>% median()
-		  b0 = -inflection * slope;
-			y_cross * (1 + exp(-b0)) / ( 1 + exp(- ( b0 + x * slope ) ) ) ;
+		  intercept = fit %>% rstan::extract(pars="sigma_intercept") %$% sigma_intercept %>% median()
+			exp(slope * x + intercept) ;
 		}, 
 		geom="line"
 	)
