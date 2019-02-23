@@ -69,9 +69,8 @@ parameters {
 
   // Signa linear model
 
-  real sigma_inflection;
-  real<lower=0> sigma_y_cross;
-  vector<upper=0>[1] sigma_slope;
+  real<upper=0> sigma_slope;
+  real sigma_intercept;
   real<lower=0>sigma_sigma;
 
 }
@@ -80,9 +79,9 @@ transformed parameters {
 
   // Sigma linear model
   //vector[G] sigma_mu = exp(lambda * sigma_slope + sigma_0); //the expected values (linear predictor)
-  vector[G] sigma_mu = gen_inv_logit(sigma_slope, lambda, sigma_inflection, sigma_y_cross) ;
-  vector[G] sigma_alpha = sigma_mu .* sigma_mu / sigma_sigma / 10; //shape parameter for the gamma distribution
-  vector[G] sigma_beta = sigma_mu / sigma_sigma / 10; //rate parameter for the gamma distribution
+  // vector[G] sigma_mu = gen_inv_logit(sigma_slope, lambda, sigma_inflection, sigma_y_cross) ;
+  // vector[G] sigma_alpha = sigma_mu .* sigma_mu / sigma_sigma / 10; //shape parameter for the gamma distribution
+  // vector[G] sigma_beta = sigma_mu / sigma_sigma / 10; //rate parameter for the gamma distribution
 
 }
 model {
@@ -96,15 +95,14 @@ model {
   exposure_rate ~ normal(0,1);
   sum(exposure_rate) ~ normal(0, 0.001 * S);
 
-  sigma_inflection ~ normal(0,2);
-  sigma_y_cross ~ cauchy(0,2);
-  sigma_slope ~ normal(0,1);
+  sigma_intercept ~ normal(0,2);
+  sigma_slope ~ normal(0,2);
   sigma_sigma ~ normal(0,2);
 
   // Gene-wise properties of the data
   // lambda ~ normal_or_gammaLog(lambda_mu, lambda_sigma, is_prior_asymetric);
   lambda ~  skew_normal(lambda_mu,lambda_sigma, lambda_skew);
-  sigma_raw ~ gamma(sigma_alpha,sigma_beta);
+  sigma_raw ~ lognormal(sigma_slope * lambda + sigma_intercept,sigma_sigma);
 
   // Sample from data
   if(omit_data==0) for(g in 1:G)
@@ -117,7 +115,7 @@ model {
 generated quantities{
   vector<lower=0>[G] sigma_raw_gen;
 
-  for(g in 1:G) sigma_raw_gen[g] = gamma_rng(sigma_alpha[g],sigma_beta[g]);
+  for(g in 1:G) sigma_raw_gen[g] = lognormal_rng(sigma_slope * lambda[g] + sigma_intercept,sigma_sigma);
 
 
 }
