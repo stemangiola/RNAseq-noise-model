@@ -1,0 +1,140 @@
+---
+title: "qq_plots_of_discrete_distributions_on_transcriptomic_data"
+author: "Mangiola Stefano"
+date: "31/01/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+# Import libraries
+
+#setwd("/wehisan/bioinf/bioinf-data/Papenfuss_lab/projects/mangiola.s/PostDoc/RNAseq-noise-model")
+set.seed(13254)
+
+# Import libraries
+library(tidyverse)
+library(magrittr)
+library(rstan)
+library(tidybayes)
+library(here)
+library(foreach)
+library(doParallel)
+registerDoParallel()
+# library(future)
+# plan(multiprocess)
+
+rstan_options(auto_write = TRUE)
+options(mc.cores = parallel::detectCores())
+
+#devtools::load_all() # Sorry this costs me 30 minutes every day
+
+my_theme = 	
+	theme_bw() +
+	theme(
+		panel.border = element_blank(),
+		axis.line = element_line(),
+		panel.grid.major = element_line(size = 0.2),
+		panel.grid.minor = element_line(size = 0.1),
+		text = element_text(size=12),
+		legend.position="bottom",
+		aspect.ratio=1,
+		axis.text.x = element_text(angle = 90, hjust = 1),
+		strip.background = element_blank(),
+		axis.title.x  = element_text(margin = margin(t = 10, r = 10, b = 10, l = 10)),
+		axis.title.y  = element_text(margin = margin(t = 10, r = 10, b = 10, l = 10))
+	)
+
+# Tools
+source("https://gist.githubusercontent.com/stemangiola/90a528038b8c52b21f9cfa6bb186d583/raw/dbd92c49fb03fb05ab0b465704b99c0a39e654d5/transcription_tool_kit.R")
+source("https://gist.githubusercontent.com/stemangiola/dd3573be22492fc03856cd2c53a755a9/raw/e4ec6a2348efc2f62b88f10b12e70f4c6273a10a/tidy_extensions.R")
+
+```
+
+
+
+# TCGA - leukemia
+
+```{r, cache=TRUE}
+
+counts_source = "Acute_Myeloid_Leukemia_Primary_Blood_Derived_Cancer_-_Peripheral_Blood"
+counts_TCGA = 
+	
+	read_csv(here("big_data", "tibble_TCGA_files", paste0(counts_source, ".csv"))) %>%
+  	# Median redundant
+  do_parallel_start(40, "ens_iso") %>%
+  do({
+    	`%>%` = magrittr::`%>%`
+  		library(tidyverse)
+  		library(magrittr)
+    	
+    	(.) %>%
+  			group_by(sample, ens_iso) %>%
+  			summarise(`read count` = `read count` %>% median(na.rm = T)) %>%
+  			ungroup() 
+  }) %>%
+  do_parallel_end() %>%
+
+  # Normalise
+	norm_RNAseq( 
+			sample_column = "sample", 
+			gene_column = "ens_iso", 
+			value_column = "read count",cpm_threshold = 10, prop = 9/10
+		) %>%
+  mutate(`read count normalised` = `read count normalised` %>% as.integer) %>%
+  mutate(`read count normalised log` = `read count normalised` %>% `+` (1) %>% log) 
+
+
+```
+
+```{r}
+Sys.setenv("STAN_NUM_THREADS" = 8)
+
+d =  read.csv( "~/third_party_sofware/cmdstan_map_rect_tutorial/RedcardData.csv" , stringsAsFactors=FALSE )
+d2 <- d[ !is.na(d$rater1) , ]
+out_data <- list( n_redcards=d2$redCards , n_games=d2$games , rating=d2$rater1 )
+out_data$N <- nrow(d2)
+
+fit = 	stan(
+		file = "~/third_party_sofware/cmdstan-2.18.1/redcard/logistic1.stan", 
+		data = out_data,
+		chains = 1
+	)
+```
+
+
+
+```{r predict_values cell_type TCGA, cache=TRUE}
+
+
+
+fileConn<-file("~/.R/Makevars")
+writeLines(c("CXX14FLAGS += -O3","CXX14FLAGS += -DSTAN_THREADS", "CXX14FLAGS += -pthread"), fileConn)
+close(fileConn)
+Sys.setenv("STAN_NUM_THREADS" = 11)
+nb_model = stan_model(here("stan",sprintf("%s.stan", "negBinomial_tidy_MPI")))
+
+counts_stan = 
+  counts_TCGA %>%
+  filter(!filt_for_calc)  %>%
+  select(ens_iso, sample, `read count`) %>%
+  spread(sample, `read count`) %>%
+  filter(!grepl("^__", ens_iso)) %>%
+  drop_na() %>%
+  sample_n(1000)
+
+data_for_stan = list(
+  G = counts_stan %>% nrow,
+  S = counts_stan %>% ncol %>% `-` (1),
+  counts = counts_stan %>% select(-ens_iso)
+)
+
+system.time(
+  sampling(
+      nb_model,
+    data = data_for_stan,
+    chains=1, iter=500
+))
+
+
+nb_model_NO_MPI = stan_model(here("stan",sprintf("%s.stan", "negBinomial_tidy_NO_MPI")))
+mob
