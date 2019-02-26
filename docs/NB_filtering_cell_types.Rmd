@@ -7,6 +7,7 @@ output: html_document
 
 ```{r setup, include=FALSE}
 # Import libraries
+setwd("~/PostDoc/RNAseq-noise-model/docs")
 
 #setwd("/wehisan/bioinf/bioinf-data/Papenfuss_lab/projects/mangiola.s/PostDoc/RNAseq-noise-model")
 set.seed(13254)
@@ -67,6 +68,8 @@ counts =
 		read_csv(f) %>% mutate(sample = sample %>% as.character, isoform = isoform %>% as.character)
 	} %>%
 	
+  filter(symbol %>% is.na %>% `!`) %>%
+  
 	# Median redundant
   do_parallel_start(40, "symbol") %>%
   do({
@@ -116,7 +119,7 @@ counts =
   		  `anova p-value` = 
   		      ifelse(
   		        (.) %>% distinct(`Data base`) %>% nrow > 1,
-  		        (.) %>% aov(`read count normalised log` ~ `Cell type formatted` + `Data base`, .) %>% anova %$%   		    `Pr(>F)` %>%  `[` (1),
+  		        (.) %>% aov(`read count normalised log` ~ `Cell type formatted` + `Data base`, .) %>% anova %$% `Pr(>F)` %>% `[` (1),
   		        (.) %>% aov(`read count normalised log` ~ `Cell type formatted`, .) %>% anova %$% `Pr(>F)` %>% `[` (1)
   		      ) 
 		    )
@@ -133,10 +136,12 @@ counts =
     `hard bimodality` =
       (`bimodal p-value` < 0.05) + 
       (`bimodal coefficient` > 0.6666667) + 
-      (`anova p-value` < 0.05 ) >= 
-      2
+      (`anova p-value` < 0.05 ) >= 2
   ) %>%
-  mutate(`soft bimodality` = `anova p-value` < 0.0001)
+  mutate(`soft bimodality` = `anova p-value` < 0.0001) %>%
+  
+  mutate(symbol = symbol %>% as.factor) %>%
+  mutate(sample = sample %>% as.factor) 
 ```
 
 Inference 
@@ -150,44 +155,99 @@ counts_stan =
   counts %>%
   filter(!filt_for_calc) %>%
   filter(!`hard bimodality`) %>%
-  #inner_join( (.) %>% distinct(symbol) %>% sample_n(500) ) %>%
+  inner_join( (.) %>% distinct(symbol) %>% sample_n(66) ) %>%
   
   left_join(
     (.) %>% 
     distinct(sample, symbol, `read count normalised`) %>% 
+    arrange(symbol) %>%
     count(symbol) %>% 
     mutate(end = cumsum(n)) %>%
     mutate(start = c(1, .$end %>% rev() %>% `[` (-1) %>% rev %>% `+` (1)))
   ) %>% 
-  arrange(symbol) 
+  arrange(symbol) %>%
+  
+  # Add sample idx
+  mutate(sample_idx = as.integer(sample)) 
 
-data_for_stan = list(
-  N = counts_stan %>% nrow,
-  G = counts_stan %>% distinct(symbol) %>% nrow,
-  S = counts_stan %>% distinct(sample) %>% nrow,
-  symbol_start_end = counts_stan %>% distinct(start, end) %>% select(start, end),
-  counts = counts_stan %>% select(`read count normalised`) %>% pull(1),
-  sample_idx = 
-    counts_stan %>%
-    mutate(sample = factor(sample)) %>% 
-    mutate(sample_idx = as.integer(sample)) %>% 
-    select(sample_idx) %>%
-    pull(1),
+shards = 5
+counts_stan_MPI =
+  counts_stan %>%
+  
+  # Add index for MPI
+  left_join(
+    (.) %>% 
+      distinct(symbol) %>%
+      mutate( idx_MPI = head( rep(1:shards, (.) %>% nrow %>% `/` (shards) %>% ceiling ) %>% sort, n=(.) %>% nrow) )
+  )
 
-  # Info on data set
-  omit_data = 0,
-  generate_quantities = 1,
-  is_prior_asymetric = 1
+data_for_stan_MPI = list(
+  
+  N = counts_stan_MPI %>% distinct(sample, symbol, idx_MPI) %>% count(idx_MPI) %>% pull(n) %>% max,
+  M = counts_stan_MPI %>% distinct(start, idx_MPI) %>% count(idx_MPI) %>% pull(n) %>% max,
+  G = counts_stan_MPI %>% distinct(symbol) %>% nrow(),
+  S = counts_stan_MPI %>% distinct(sample) %>% nrow(),
+  n_shards = shards,
+  G_per_shard = counts_stan_MPI %>% distinct(symbol, idx_MPI) %>% count(idx_MPI) %>% pull(n) ,
+  G_per_shard_idx = c(0, counts_stan_MPI %>% distinct(symbol, idx_MPI) %>% count(idx_MPI) %>% pull(n) %>% cumsum),
+  
+  counts = foreach(idx = counts_stan_MPI %>% distinct(idx_MPI) %>% pull(idx_MPI), .combine = full_join) %do% {
+    counts_stan_MPI %>%
+    filter(idx_MPI == idx) %>%
+    select(`read count`) %>% 
+    setNames(idx) %>%
+    mutate(i = 1:n())
+  } %>%
+  select(-i) %>%
+    replace(is.na(.), 0) %>%
+    mutate_if(is.numeric, as.integer) %>%
+    as_matrix() %>% t,
+  
+  symbol_start =   foreach(idx = counts_stan_MPI %>% distinct(idx_MPI) %>% pull(idx_MPI), .combine = full_join) %do% {
+    counts_stan_MPI %>%
+    filter(idx_MPI == idx) %>%
+    distinct(start) %>% 
+    rbind(  counts_stan_MPI %>% filter(idx_MPI == idx) %>% pull(end) %>% max) %>%
+    mutate(start = start - ( (.) %>% head(n=1) %>% pull(start)) + 1) %>%
+    setNames(idx) %>%
+    mutate(i = 1:n())
+  } %>%
+  select(-i) %>%
+    replace(is.na(.), 0) %>%
+    mutate_if(is.numeric, as.integer) %>%
+    as_matrix() %>% t,
+  
+  sample_idx =  foreach(idx = counts_stan_MPI %>% distinct(idx_MPI) %>% pull(idx_MPI), .combine = full_join) %do% {
+    counts_stan_MPI %>%
+    filter(idx_MPI == idx) %>%
+    select(sample_idx) %>% 
+    setNames(idx) %>%
+    mutate(i = 1:n())
+  } %>%
+  select(-i) %>%
+  replace(is.na(.), 0) %>%
+    mutate_if(is.numeric, as.integer) %>%
+    as_matrix() %>% t
+
 )
 
-# fit =
-#   sampling(
-#       nb_model,
-#     data = data_for_stan, 
-#     chains=4, iter=500
-# )
-# fit_parsed = fit %>% spread_draws(lambda[G], sigma[G], sigma_raw[G]) 
-#fit %>% summary() %$% summary %>% as_tibble(rownames="par")
+file("~/.R/Makevars") %>% {
+  writeLines(c("CXX14FLAGS += -O3", "CXXFLAGS += -DSTAN_THREADS", "CXXFLAGS += -pthread"), (.)); 
+  (.)
+} %>%
+close(.)
+nb_model = stan_model(here("stan",sprintf("%s.stan", "negBinomial_tidy_MPI")))
+Sys.setenv("STAN_NUM_THREADS" = 8)
+
+
+fit =
+  sampling(
+      nb_model,
+    data = data_for_stan_MPI,
+    chains=1, iter=1
+)
+fit_parsed = fit %>% spread_draws(lambda[G], sigma[G], sigma_raw[G])
+fit %>% summary() %$% summary %>% as_tibble(rownames="par")
 
 
 load("fit_parsed_all_genes_t_cell_18022019.RData")
