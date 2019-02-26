@@ -231,20 +231,18 @@ data_for_stan_MPI = list(
 
 )
 
-file("~/.R/Makevars") %>% {
-  writeLines(c("CXX14FLAGS += -O3", "CXXFLAGS += -DSTAN_THREADS", "CXXFLAGS += -pthread"), (.)); 
-  (.)
-} %>%
-close(.)
-nb_model = stan_model(here("stan",sprintf("%s.stan", "negBinomial_tidy_MPI")))
+fileConn<-file("~/.R/Makevars")
+writeLines(c("CXX14FLAGS += -O3","CXX14FLAGS += -DSTAN_THREADS", "CXX14FLAGS += -pthread"), fileConn)
+close(fileConn)
 Sys.setenv("STAN_NUM_THREADS" = 8)
+nb_model = stan_model(here("stan",sprintf("%s.stan", "negBinomial_tidy_MPI")))
 
 
 fit =
   sampling(
       nb_model,
     data = data_for_stan_MPI,
-    chains=1, iter=1
+    chains=1, iter=500
 )
 fit_parsed = fit %>% spread_draws(lambda[G], sigma[G], sigma_raw[G])
 fit %>% summary() %$% summary %>% as_tibble(rownames="par")
