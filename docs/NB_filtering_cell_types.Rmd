@@ -148,14 +148,13 @@ Inference
 
 ```{r predict_values cell_type, cache=TRUE}
 
-nb_model = stan_model(here("stan",sprintf("%s.stan", "negBinomial_tidy")))
 
 set.seed(1325364)
 counts_stan = 
   counts %>%
   filter(!filt_for_calc) %>%
   filter(!`hard bimodality`) %>%
-  inner_join( (.) %>% distinct(symbol) %>% sample_n(66) ) %>%
+  inner_join( (.) %>% distinct(symbol) %>% sample_n(300) ) %>%
   
   left_join(
     (.) %>% 
@@ -169,6 +168,34 @@ counts_stan =
   
   # Add sample idx
   mutate(sample_idx = as.integer(sample)) 
+
+data_for_stan = list(
+  N = counts_stan %>% nrow,
+  G = counts_stan %>% distinct(symbol) %>% nrow,
+  S = counts_stan %>% distinct(sample) %>% nrow,
+  symbol_start_end = counts_stan %>% distinct(start, end) %>% select(start, end),
+  counts = counts_stan %>% select(`read count normalised`) %>% pull(1),
+  sample_idx = 
+    counts_stan %>%
+    pull(sample_idx),
+  # Info on data set
+  omit_data = 0,
+  generate_quantities = 1,
+  is_prior_asymetric = 1
+)
+
+fileConn<-file("~/.R/Makevars")
+writeLines(c("CXX14FLAGS += -O3"), fileConn)
+close(fileConn)
+nb_model = stan_model(here("stan",sprintf("%s.stan", "negBinomial_tidy")))
+system.time(
+  sampling(
+      nb_model,
+    data = data_for_stan,
+    chains=1, iter=500
+))
+
+# MPI
 
 shards = 5
 counts_stan_MPI =
@@ -235,15 +262,17 @@ fileConn<-file("~/.R/Makevars")
 writeLines(c("CXX14FLAGS += -O3","CXX14FLAGS += -DSTAN_THREADS", "CXX14FLAGS += -pthread"), fileConn)
 close(fileConn)
 Sys.setenv("STAN_NUM_THREADS" = 8)
-nb_model = stan_model(here("stan",sprintf("%s.stan", "negBinomial_tidy_MPI")))
-
-
-fit =
+nb_model_MPI = stan_model(here("stan",sprintf("%s.stan", "negBinomial_tidy_MPI")))
+system.time(
   sampling(
-      nb_model,
+      nb_model_MPI,
     data = data_for_stan_MPI,
     chains=1, iter=500
-)
+))
+```
+
+
+```{r}
 fit_parsed = fit %>% spread_draws(lambda[G], sigma[G], sigma_raw[G])
 fit %>% summary() %$% summary %>% as_tibble(rownames="par")
 
