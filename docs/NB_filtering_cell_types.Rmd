@@ -197,7 +197,7 @@ system.time(
 
 # MPI
 
-shards = 5
+shards = 1
 counts_stan_MPI =
   counts_stan %>%
   
@@ -215,7 +215,7 @@ data_for_stan_MPI = list(
   G = counts_stan_MPI %>% distinct(symbol) %>% nrow(),
   S = counts_stan_MPI %>% distinct(sample) %>% nrow(),
   n_shards = shards,
-  G_per_shard = counts_stan_MPI %>% distinct(symbol, idx_MPI) %>% count(idx_MPI) %>% pull(n) ,
+  G_per_shard = counts_stan_MPI %>% distinct(symbol, idx_MPI) %>% count(idx_MPI) %>% pull(n) %>% as.array,
   G_per_shard_idx = c(0, counts_stan_MPI %>% distinct(symbol, idx_MPI) %>% count(idx_MPI) %>% pull(n) %>% cumsum),
   
   counts = foreach(idx = counts_stan_MPI %>% distinct(idx_MPI) %>% pull(idx_MPI), .combine = full_join) %do% {
