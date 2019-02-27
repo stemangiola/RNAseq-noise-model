@@ -147,14 +147,20 @@ counts =
 Inference 
 
 ```{r predict_values cell_type, cache=TRUE}
-
+n_genes = 1000
 
 set.seed(1325364)
 counts_stan = 
   counts %>%
   filter(!filt_for_calc) %>%
   filter(!`hard bimodality`) %>%
-  inner_join( (.) %>% distinct(symbol) %>% sample_n(300) ) %>%
+  
+  # Make DF squared
+  left_join( (.) %>% count(symbol) %>% mutate(n_approx = (n / 20) %>% floor) ) %>%
+  filter(n == 58) %>%
+  #
+  
+  inner_join( (.) %>% distinct(symbol) %>% sample_n(n_genes) ) %>%
   
   left_join(
     (.) %>% 
@@ -197,11 +203,25 @@ system.time(
 
 # MPI
 
-shards = 1
+shards = 10
 counts_stan_MPI =
   counts_stan %>%
   
   # Add index for MPI
+  #   left_join( (.) %>% count(symbol) %>% mutate(n_approx = (n / 20) %>% floor) ) %>%
+  # group_by(n_approx) %>%
+  # do({
+  #   df = (.)
+  #   browser()
+  #   df %>%   
+  #   left_join(
+  #     df %>% 
+  #       distinct(symbol) %>%
+  #       mutate( idx_MPI = sample(rep(1:shards, (((.) %>% nrow) / shards) %>% ceiling ), (.) %>% nrow, replace=F)  )
+  #   )
+  # }) %>%
+  # ungroup()
+
   left_join(
     (.) %>% 
       distinct(symbol) %>%
@@ -261,7 +281,7 @@ data_for_stan_MPI = list(
 fileConn<-file("~/.R/Makevars")
 writeLines(c("CXX14FLAGS += -O3","CXX14FLAGS += -DSTAN_THREADS", "CXX14FLAGS += -pthread"), fileConn)
 close(fileConn)
-Sys.setenv("STAN_NUM_THREADS" = 8)
+Sys.setenv("STAN_NUM_THREADS" = 11)
 nb_model_MPI = stan_model(here("stan",sprintf("%s.stan", "negBinomial_tidy_MPI")))
 system.time(
   sampling(
@@ -418,18 +438,16 @@ counts_TCGA =
 ```
 
 ```{r predict_values cell_type TCGA, cache=TRUE}
-file("~/.R/Makevars") %>% {
-  writeLines(c("CXX14FLAGS += -O3"), (.)); 
-  (.)
-} %>%
-close(.)
-nb_model = stan_model(here("stan",sprintf("%s.stan", "negBinomial_tidy")))
+
+# non MPI
 
 set.seed(1325364)
+num_genes = 100
+
 counts_stan = 
   counts_TCGA %>%
   #filter(!filt_for_calc)  %>%
-  inner_join( (.) %>% distinct(ens_iso) %>% sample_n(500) ) %>%
+  inner_join( (.) %>% distinct(ens_iso) %>% sample_n(num_genes) ) %>%
   
   left_join(
     (.) %>% 
@@ -438,7 +456,11 @@ counts_stan =
     mutate(end = cumsum(n)) %>%
     mutate(start = c(1, .$end %>% rev() %>% `[` (-1) %>% rev %>% `+` (1)))
   ) %>% 
-  arrange(ens_iso) 
+  arrange(ens_iso) %>%
+  
+  # Add sample idx
+  mutate(sample_idx = as.integer(as.factor(sample)))
+
 
 data_for_stan = list(
   N = counts_stan %>% nrow,
@@ -459,15 +481,128 @@ data_for_stan = list(
   is_prior_asymetric = 1
 )
 
-fit =
+fileConn<-file("~/.R/Makevars")
+writeLines(c("CXX14FLAGS += -O3"), fileConn)
+close(fileConn)
+nb_model = stan_model(here("stan",sprintf("%s.stan", "negBinomial_tidy")))
+
+system.time(
   sampling(
       nb_model,
     data = data_for_stan,
-    chains=4, iter=300, warmup=200
-)
+    chains=1, iter=500
+))
 fit_parsed = fit %>% spread_draws(lambda[G], sigma[G], sigma_raw[G], sigma_raw_gen[G])
 fit %>% summary() %$% summary %>% as_tibble(rownames="par")
+####
 
+# MPI
+shards = 10
+counts_stan_MPI =
+  counts_stan %>%
+  
+  # Add index for MPI
+  left_join(
+    (.) %>% 
+      distinct(ens_iso) %>%
+      mutate( idx_MPI = head( rep(1:shards, (.) %>% nrow %>% `/` (shards) %>% ceiling ) %>% sort, n=(.) %>% nrow) )
+  ) 
+
+data_for_stan_MPI = list(
+  
+  N = counts_stan_MPI %>% distinct(sample, ens_iso, idx_MPI) %>% count(idx_MPI) %>% pull(n) %>% max,
+  M = counts_stan_MPI %>% distinct(start, idx_MPI) %>% count(idx_MPI) %>% pull(n) %>% max,
+  G = counts_stan_MPI %>% distinct(ens_iso) %>% nrow(),
+  S = counts_stan_MPI %>% distinct(sample) %>% nrow(),
+  n_shards = shards,
+  G_per_shard = counts_stan_MPI %>% distinct(ens_iso, idx_MPI) %>% count(idx_MPI) %>% pull(n) %>% as.array,
+  G_per_shard_idx = c(0, counts_stan_MPI %>% distinct(ens_iso, idx_MPI) %>% count(idx_MPI) %>% pull(n) %>% cumsum),
+  
+  counts = foreach(idx = counts_stan_MPI %>% distinct(idx_MPI) %>% pull(idx_MPI), .combine = full_join) %do% {
+    counts_stan_MPI %>%
+    filter(idx_MPI == idx) %>%
+    select(`read count`) %>% 
+    setNames(idx) %>%
+    mutate(i = 1:n())
+  } %>%
+  select(-i) %>%
+    replace(is.na(.), 0) %>%
+    mutate_if(is.numeric, as.integer) %>%
+    as_matrix() %>% t,
+  
+  symbol_start =   foreach(idx = counts_stan_MPI %>% distinct(idx_MPI) %>% pull(idx_MPI), .combine = full_join) %do% {
+    counts_stan_MPI %>%
+    filter(idx_MPI == idx) %>%
+    distinct(start) %>% 
+    rbind(  counts_stan_MPI %>% filter(idx_MPI == idx) %>% pull(end) %>% max) %>%
+    mutate(start = start - ( (.) %>% head(n=1) %>% pull(start)) + 1) %>%
+    setNames(idx) %>%
+    mutate(i = 1:n())
+  } %>%
+  select(-i) %>%
+    replace(is.na(.), 0) %>%
+    mutate_if(is.numeric, as.integer) %>%
+    as_matrix() %>% t,
+  
+  sample_idx =  foreach(idx = counts_stan_MPI %>% distinct(idx_MPI) %>% pull(idx_MPI), .combine = full_join) %do% {
+    counts_stan_MPI %>%
+    filter(idx_MPI == idx) %>%
+    select(sample_idx) %>% 
+    setNames(idx) %>%
+    mutate(i = 1:n())
+  } %>%
+  select(-i) %>%
+  replace(is.na(.), 0) %>%
+    mutate_if(is.numeric, as.integer) %>%
+    as_matrix() %>% t
+
+)
+
+fileConn<-file("~/.R/Makevars")
+writeLines(c("CXX14FLAGS += -O3","CXX14FLAGS += -DSTAN_THREADS", "CXX14FLAGS += -pthread"), fileConn)
+close(fileConn)
+Sys.setenv("STAN_NUM_THREADS" = 11)
+nb_model_MPI = stan_model(here("stan",sprintf("%s.stan", "negBinomial_tidy_MPI")))
+system.time(
+  sampling(
+      nb_model_MPI,
+    data = data_for_stan_MPI,
+    chains=1, iter=500
+))
+
+###
+
+# MPI2
+
+fileConn<-file("~/.R/Makevars")
+writeLines(c("CXX14FLAGS += -O3","CXX14FLAGS += -DSTAN_THREADS", "CXX14FLAGS += -pthread"), fileConn)
+close(fileConn)
+Sys.setenv("STAN_NUM_THREADS" = 11)
+nb_model_MPI2 = stan_model(here("stan",sprintf("%s.stan", "negBinomial_tidy_MPI2")))
+
+counts_stan = 
+  counts_TCGA %>%
+  #filter(!filt_for_calc)  %>%
+  select(ens_iso, sample, `read count`) %>%
+  spread(sample, `read count`) %>%
+  filter(!grepl("^__", ens_iso)) %>%
+  drop_na() %>%
+  sample_n(num_genes)
+
+data_for_stan = list(
+  G = counts_stan %>% nrow,
+  S = counts_stan %>% ncol %>% `-` (1),
+  counts = counts_stan %>% select(-ens_iso)
+)
+
+system.time(
+  sampling(
+      nb_model_MPI2,
+    data = data_for_stan,
+    chains=1, iter=500
+))
+
+###########
 
 load("fit_parsed_500_genes_TCGA_leukimia_18022019.RData")
 
