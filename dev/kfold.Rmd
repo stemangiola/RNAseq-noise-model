@@ -16,6 +16,7 @@ library(foreach)
 library(doParallel)
 library(loo)
 library(matrixStats)
+library(DESeq2)
 registerDoParallel()
 # library(future)
 # plan(multiprocess)
@@ -37,48 +38,61 @@ data_for_stan = data_for_stan_from_tidy(N, G, counts_tidy)
 
 
 ```{r}
-bad_genes <- c("ATF3", "CDKN1A", "COX1","CST3","EGR1","FOSB", "HIST1H3A,p1","LYZ","NR4A3","RN7SL5P",
-               "RPL15P3","RPS3AP6","RRM2","S100A9","SNORA12","SNORA16A","SNORA20","SOX4","TYROBP","uc004cos.3")
-
-raw_data <- read_csv(here("big_data", "tibble_TCGA_files", paste0(counts_source, ".csv")))
-    counts_tidy =
-      raw_data %>%
-      filter(sample %in% ( (.) %>% distinct(sample) %>% head(n=N) %>% pull(sample)) ) %>%
-      filter(ens_iso %in% bad_genes) %>%
-      mutate_if(is.character, as.factor) %>%
-
-      # Add numerical indexes
-      left_join(
-        (.) %>%
-          distinct(ens_iso) %>%
-          arrange(ens_iso) %>%
-          mutate(ens_iso_idx = 1:n())
-      ) %>%
-      left_join(
-        (.) %>%
-          distinct(sample) %>%
-          arrange(sample) %>%
-          mutate(sample_idx = 1:n())
-      )
+# bad_genes_file <- here::here("local_temp_data","bad_genes.rds")
+# bad_genes <- c("ATF3", "CDKN1A", "COX1","CST3","EGR1","FOSB", "HIST1H3A,p1","LYZ","NR4A3","RN7SL5P",
+#                "RPL15P3","RPS3AP6","RRM2","S100A9","SNORA12","SNORA16A","SNORA20","SOX4","TYROBP","uc004cos.3")
+# 
+# raw_data <- read_csv(here("big_data", "tibble_TCGA_files", paste0(counts_source, ".csv")))
+# data_bad_genes <- raw_data %>%
+#     counts_tidy =
+#       raw_data %>%
+#       filter(sample %in% ( (.) %>% distinct(sample) %>% head(n=N) %>% pull(sample)) ) %>%
+#       filter(ens_iso %in% bad_genes) %>%
+#       mutate_if(is.character, as.factor) %>%
+# 
+#       # Add numerical indexes
+#       left_join(
+#         (.) %>%
+#           distinct(ens_iso) %>%
+#           arrange(ens_iso) %>%
+#           mutate(ens_iso_idx = 1:n())
+#       ) %>%
+#       left_join(
+#         (.) %>%
+#           distinct(sample) %>%
+#           arrange(sample) %>%
+#           mutate(sample_idx = 1:n())
+#       )
 
 ```
 
 
 ```{r}
 model_defs = data.frame(model_name = c(
-  "multinomial",
-  "negBinomial"
+  "negBinomial_deseq2",
+  "negBinomial",
+  "gamma_multinomial"
   ))
+```
+
+```{r}
+deseq_normalization <- estimateSizeFactorsForMatrix(t(data_for_stan$counts))
 ```
 
 
 ```{r}
-K = 3
+K = 2
 
 set.seed(1346842485)
 
 #Copy the data for all runs
 kfold_def <- prepare_kfold(K, model_defs, data_for_stan)
+for(i in 1:length(kfold_def$model_defs_kfold)) {
+  if(kfold_def$model_defs_kfold$model_name[i] == "negBinomial_deseq2") {
+    kfold_def$data_list[[i]]$normalization = deseq_normalization
+    kfold_def$data_list[[i]]$my_prior = c(5, 3)
+  }
+}
 kfold_res <- run_kfold(kfold_def, "test")
 compare(x = kfold_res$kfold)
 ```

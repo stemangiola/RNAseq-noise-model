@@ -87,8 +87,7 @@ generated quantities{
 
   vector[G_gen] lambda_gen;
   vector[N_log_lik] log_lik;
-
-  nutno vyresit generate_log_lik
+  vector[N_log_lik] log_lik_sampled;
 
   if(generate_quantities) {
     // Sample gene wise rates
@@ -117,10 +116,17 @@ generated quantities{
       counts_gen_geneWise[n,] = multinomial_rng(to_vector(theta[n,]) / sum(theta[n,]), exposure[n]);
     }
 
+  }
+
     //log_lik for LOO
+  if(generate_log_lik) {
+    vector[G] gamma_rate_gen = phi ./ exp(lambda);
+    for(n in 1:N) {
+      log_lik[n] = multinomial_lpmf(counts[n,] | to_vector(theta[n,]) / sum(theta[n,]));
+    }
+
     {
-      int S = 10000;
-      vector[G] gamma_rate_gen = phi ./ exp(lambda_gen);
+      int S = 100;
       for(n in 1:N) {
         vector[S] log_lik_samp;
         for(s in 1:S) {
@@ -130,10 +136,10 @@ generated quantities{
           }
           log_lik_samp[s] = multinomial_lpmf(counts[n,] | gamma_samp / sum(gamma_samp));
         }
-        log_lik[n] = log_sum_exp(log_lik_samp) - log(S);
+        log_lik_sampled[n] = log_sum_exp(log_lik_samp) - log(S);
       }
     }
-
   }
+
 
 }

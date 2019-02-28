@@ -340,3 +340,31 @@ generate_data_lognormal_simpler_test <- function(G, N) {
     )
   )
 }
+
+generate_data_negbinomial_deseq2 <- function(G, N, asymptDisp, extraPois) {
+  my_prior <- c(5, 2)
+  lambda <- rnorm(G, my_prior[1], my_prior[2])
+  phi <- asymptDisp + extraPois / exp(lambda)
+  counts <- array(-1, c(N, G))
+  for(n in 1:N) {
+    counts[n,] <- rnbinom(G, mu = exp(lambda), size = phi)
+  }
+
+  list(
+    observed = list(
+      N = N,
+      G = G,
+      counts = counts,
+      my_prior = my_prior,
+      holdout = array(0, N),
+      generate_quantities = 0,
+      generate_log_lik = 0,
+      normalization = array(1, N)
+    ),
+    true = list(
+      lambda = lambda,
+      asymptDisp = asymptDisp,
+      extraPois = extraPois
+    )
+  )
+}

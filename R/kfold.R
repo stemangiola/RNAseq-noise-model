@@ -20,8 +20,15 @@ prepare_kfold <- function(K, model_defs, base_data) {
     data_list[[i]]$holdout = (folds == model_defs_kfold$fold[i])
   }
 
+  if(!is.null(model_defs$adapt_delta)) {
+    control_list = map(model_defs_kfold$adapt_delta, function(x) { list(adapt_delta =x)})
+  } else {
+    control_list = NULL
+  }
+
   list(
     data_list = data_list,
+    control_list = list,
     model_defs = model_defs,
     model_defs_kfold = model_defs_kfold,
     models_list = models[model_defs_kfold$model_name]
@@ -34,7 +41,11 @@ run_kfold <- function(kfold_def, name_for_cache) {
   if(!dir.exists(cache_dir)) {
     dir.create(cache_dir)
   }
-  fits = sampling_multi(kfold_def$models_list, kfold_def$data_list, cache_dir = cache_dir, cores = getOption("mc.cores"))
+  fits = sampling_multi(kfold_def$models_list,
+                        kfold_def$data_list,
+                        control_per_item = kfold_def$control_list,
+                        cache_dir = cache_dir,
+                        cores = getOption("mc.cores"))
 
   kfold_log_lik <- kfold_def$model_defs$id %>% map(function(id) {
     indices = kfold_def$model_defs_kfold$id == id
