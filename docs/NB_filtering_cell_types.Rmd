@@ -147,7 +147,7 @@ counts =
 Inference 
 
 ```{r predict_values cell_type, cache=TRUE}
-n_genes = 10
+n_genes = 50
 
 set.seed(1325364)
 counts_stan = 
@@ -168,7 +168,7 @@ counts_stan =
 data_for_stan = counts_stan %>%
   left_join(
     (.) %>% 
-    distinct(sample, symbol, `read count normalised`) %>% 
+    distinct(sample, symbol) %>% 
     arrange(symbol) %>%
     count(symbol) %>% 
     mutate(end = cumsum(n)) %>%
@@ -181,7 +181,7 @@ data_for_stan = counts_stan %>%
   S = (.) %>% distinct(sample) %>% nrow,
   symbol_start_end = (.) %>% distinct(start, end) %>% select(start, end),
   symbols = (.) %>% distinct(symbol) %>% arrange(symbol),
-  counts = (.) %>% select(`read count normalised`) %>% pull(1),
+  counts = (.) %>% select(`read count`) %>% pull(1),
   sample_idx = 
     (.) %>%
     pull(sample_idx),
@@ -199,12 +199,12 @@ fit =
   sampling(
       nb_model,
     data = data_for_stan,
-    chains=2, iter=200
+    chains=2, iter=1000
 )
 
 # MPI
 
-shards = 1
+shards = 2
 counts_stan_MPI =
   counts_stan %>%
   left_join(
@@ -220,7 +220,7 @@ counts_stan_MPI =
     (.) %>%
     left_join(
       (.) %>% 
-      distinct(idx_MPI, sample, symbol, `read count normalised`) %>% 
+      distinct(idx_MPI, sample, symbol) %>% 
       arrange(idx_MPI, symbol) %>%
       count(idx_MPI, symbol) %>% 
       mutate(end = cumsum(n)) %>%
@@ -240,52 +240,55 @@ data_for_stan_MPI = list(
   G_per_shard_idx = c(0, counts_stan_MPI %>% distinct(symbol, idx_MPI) %>% count(idx_MPI) %>% pull(n) %>% cumsum),
   
   
-  counts = foreach(idx = counts_stan_MPI %>% distinct(idx_MPI) %>% pull(idx_MPI), .combine = full_join) %do% {
-    counts_stan_MPI %>%
-    filter(idx_MPI == idx) %>%
-    select(`read count normalised`) %>% 
-    setNames(idx) %>%
-    mutate(i = 1:n())
-  } %>%
-  select(-i) %>%
-    replace(is.na(.), 0) %>%
-    mutate_if(is.numeric, as.integer) %>%
-    as_matrix() %>% t,
-  
-  symbol_start =   foreach(idx = counts_stan_MPI %>% distinct(idx_MPI) %>% pull(idx_MPI), .combine = full_join) %do% {
-    counts_stan_MPI %>%
-    filter(idx_MPI == idx) %>%
-    distinct(start) %>% 
-    rbind(  counts_stan_MPI %>% filter(idx_MPI == idx) %>% pull(end) %>% max) %>%
-    #mutate(start = start - ( (.) %>% head(n=1) %>% pull(start)) + 1) %>%
-    setNames(idx) %>%
-    mutate(i = 1:n())
-  } %>%
-  select(-i) %>%
-    replace(is.na(.), 0) %>%
-    mutate_if(is.numeric, as.integer) %>%
-    as_matrix() %>% t,
-  
-    symbols = foreach(idx = counts_stan_MPI %>% distinct(idx_MPI) %>% pull(idx_MPI), .combine = full_join) %do% {
+  counts = 
+    foreach(idx = counts_stan_MPI %>% distinct(idx_MPI) %>% pull(idx_MPI), .combine = full_join) %do% {
       counts_stan_MPI %>%
-          filter(idx_MPI == idx) %>%
-          distinct(symbol) %>% 
-          rbind(  counts_stan_MPI %>% filter(idx_MPI == idx) %>% pull(end) %>% max) %>%
-          #mutate(start = start - ( (.) %>% head(n=1) %>% pull(start)) + 1) %>%
-          setNames(idx) %>%
-          mutate(i = 1:n())
-  } %>%
+      filter(idx_MPI == idx) %>%
+      select(`read count`) %>% 
+      setNames(idx) %>%
+      mutate(i = 1:n())
+    } %>%
+    select(-i) %>%
+    replace(is.na(.), 0) %>%
+    mutate_if(is.numeric, as.integer) %>%
+    as_matrix() %>% t,
+  
+  symbol_start =   
+    foreach(idx = counts_stan_MPI %>% distinct(idx_MPI) %>% pull(idx_MPI), .combine = full_join) %do% {
+      counts_stan_MPI %>%
+      filter(idx_MPI == idx) %>%
+      distinct(start) %>% 
+      rbind(  counts_stan_MPI %>% filter(idx_MPI == idx) %>% pull(end) %>% max) %>%
+      #mutate(start = start - ( (.) %>% head(n=1) %>% pull(start)) + 1) %>%
+      setNames(idx) %>%
+      mutate(i = 1:n())
+    } %>%
+    select(-i) %>%
+    replace(is.na(.), 0) %>%
+    mutate_if(is.numeric, as.integer) %>%
+    as_matrix() %>% t,
+  
+  symbols = 
+    foreach(idx = counts_stan_MPI %>% distinct(idx_MPI) %>% pull(idx_MPI), .combine = full_join) %do% {
+      counts_stan_MPI %>%
+      filter(idx_MPI == idx) %>%
+      distinct(symbol) %>% 
+      mutate(symbol = as.character(symbol)) %>%
+      setNames(idx) %>%
+      mutate(i = 1:n())
+    } %>%
     select(-i),
   
-  sample_idx =  foreach(idx = counts_stan_MPI %>% distinct(idx_MPI) %>% pull(idx_MPI), .combine = full_join) %do% {
-    counts_stan_MPI %>%
-    filter(idx_MPI == idx) %>%
-    select(sample_idx) %>% 
-    setNames(idx) %>%
-    mutate(i = 1:n())
-  } %>%
-  select(-i) %>%
-  replace(is.na(.), 0) %>%
+  sample_idx =  
+    foreach(idx = counts_stan_MPI %>% distinct(idx_MPI) %>% pull(idx_MPI), .combine = full_join) %do% {
+      counts_stan_MPI %>%
+      filter(idx_MPI == idx) %>%
+      select(sample_idx) %>% 
+      setNames(idx) %>%
+      mutate(i = 1:n())
+    } %>%
+    select(-i) %>%
+    replace(is.na(.), 0) %>%
     mutate_if(is.numeric, as.integer) %>%
     as_matrix() %>% t
 
@@ -300,7 +303,7 @@ fit_MPI =
   sampling(
       nb_model_MPI,
     data = data_for_stan_MPI,
-    chains=2, iter=300
+    chains=2, iter=1000
 )
 
 
@@ -312,10 +315,10 @@ fit_parsed %>%
   left_join(data_for_stan$symbols %>% mutate(G=1:n()) ) %>% left_join(
     fit_MPI_parsed %>%
     mean_qi() %>%
-    left_join(data_for_stan_MPI$symbols %>% gather(idx_MPI, symbol) %>% mutate(G=1:n()) ) ,
+    left_join(data_for_stan_MPI$symbols %>% gather(idx_MPI, symbol) %>% arrange(idx_MPI, symbol) %>% mutate(G=1:n()) ) ,
     by = c("symbol")
   ) %>%
-ggplot(  aes(x = lambda.x, y = lambda.y  )  ) + geom_point()
+{ggplot((.),  aes(x = lambda.x, y = lambda.y , label=symbol , idx_MPI=idx_MPI, color=symbol=="AKR1C3")  ) + geom_point()} %>% plotly::ggplotly()
 
 ```
 
