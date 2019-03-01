@@ -15,7 +15,7 @@ functions{
 
 
 	 for(g in 1:G_per_shard){
-	 	lp[g] =  neg_binomial_2_log_lpmf(counts[symbol_start[g]:symbol_start[g+1]] | lambda_MPI[g], sigma_MPI[g]);
+	 	lp[g] =  neg_binomial_2_log_lpmf(counts[symbol_start[g]:symbol_start[g+1]-1] | lambda_MPI[g], sigma_MPI[g]);
 	 }
 
 
