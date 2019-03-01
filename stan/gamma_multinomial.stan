@@ -39,6 +39,8 @@ data {
 
   //Set to 1 for each sample that is held out
   int<lower=0, upper=1> holdout[N];
+
+  int<lower=0> N_samples_log_lik;
 }
 
 transformed data {
@@ -126,17 +128,16 @@ generated quantities{
     }
 
     {
-      int S = 100;
       for(n in 1:N) {
-        vector[S] log_lik_samp;
-        for(s in 1:S) {
+        vector[N_samples_log_lik] log_lik_samp;
+        for(s in 1:N_samples_log_lik) {
           vector[G] gamma_samp;
           for(g in 1:G) {
             gamma_samp[g] = gamma_rng(phi[g], gamma_rate_gen[g]);
           }
           log_lik_samp[s] = multinomial_lpmf(counts[n,] | gamma_samp / sum(gamma_samp));
         }
-        log_lik_sampled[n] = log_sum_exp(log_lik_samp) - log(S);
+        log_lik_sampled[n] = log_sum_exp(log_lik_samp) - log(N_samples_log_lik);
       }
     }
   }

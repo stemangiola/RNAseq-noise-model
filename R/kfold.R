@@ -2,7 +2,7 @@ prepare_kfold <- function(K, model_defs, base_data) {
   model_names <- unique(model_defs$model_name)
 
   models =
-    foreach(model_name = model_names) %dopar% {
+    foreach(model_name = model_names) %do% {
       library(rstan) #On Windows, %dopar%-ed code does not share the main session
       library(here)
       rstan_options(auto_write = TRUE)
@@ -31,7 +31,8 @@ prepare_kfold <- function(K, model_defs, base_data) {
     control_list = list,
     model_defs = model_defs,
     model_defs_kfold = model_defs_kfold,
-    models_list = models[model_defs_kfold$model_name]
+    models_list = models[as.character(model_defs_kfold$model_name)],
+    models_unique = models
   )
 
 }

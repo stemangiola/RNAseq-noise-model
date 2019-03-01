@@ -17,6 +17,9 @@ library(doParallel)
 library(loo)
 library(matrixStats)
 library(DESeq2)
+
+devtools::load_all()
+
 registerDoParallel()
 # library(future)
 # plan(multiprocess)
@@ -69,10 +72,12 @@ data_for_stan = data_for_stan_from_tidy(N, G, counts_tidy)
 
 ```{r}
 model_defs = data.frame(model_name = c(
-  "negBinomial_deseq2",
+  "negBinomial_deseq2", 
   "negBinomial",
-  "gamma_multinomial"
-  ))
+  "gamma_multinomial",
+  "logNormal_multinomial",
+  "multinomial"
+  ), adapt_delta = c(0.8, 0.8, 0.95, 0.95, 0.8))
 ```
 
 ```{r}
@@ -81,20 +86,36 @@ deseq_normalization <- estimateSizeFactorsForMatrix(t(data_for_stan$counts))
 
 
 ```{r}
-K = 2
+K = 10
 
 set.seed(1346842485)
 
+N_samples_gamma_log_lik <- 10000
 #Copy the data for all runs
 kfold_def <- prepare_kfold(K, model_defs, data_for_stan)
-for(i in 1:length(kfold_def$model_defs_kfold)) {
+for(i in 1:nrow(kfold_def$model_defs_kfold)) {
   if(kfold_def$model_defs_kfold$model_name[i] == "negBinomial_deseq2") {
     kfold_def$data_list[[i]]$normalization = deseq_normalization
     kfold_def$data_list[[i]]$my_prior = c(5, 3)
   }
+  if(kfold_def$model_defs_kfold$model_name[i] == "gamma_multinomial") {
+    kfold_def$data_list[[i]]$N_samples_log_lik = N_samples_gamma_log_lik
+  }
 }
+
 kfold_res <- run_kfold(kfold_def, "test")
-compare(x = kfold_res$kfold)
+#compare(x = kfold_res$kfold)
+
+#Test the "sampled" version of gamma_multinomial
+id_gamma <- kfold_def$model_defs %>% filter(model_name == "gamma_multinomial") %>% pull(id)
+indices_gamma = kfold_def$model_defs_kfold$id == id_gamma
+fits_gamma <- kfold_res$fits[indices_gamma]
+holdout_gamma <- lapply(kfold_def$data_list[indices_gamma], '[[', "holdout")
+log_lik_gamma_sampled <- extract_log_lik_K(fits_gamma, holdout_gamma, "log_lik_sampled")
+
+kfold_all <- c(kfold_res$kfold, list(gamma_multinomial_sampled = kfold(log_lik_gamma_sampled)))
+compare(x = kfold_all)
+
 ```
 
 
