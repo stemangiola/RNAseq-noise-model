@@ -152,7 +152,7 @@ n_genes = 50
 set.seed(1325364)
 counts_stan = 
   counts %>%
-  filter(!filt_for_calc) %>%
+  #filter(!filt_for_calc) %>%
   filter(!`hard bimodality`) %>%
   
   # Make DF squared
@@ -199,12 +199,12 @@ fit =
   sampling(
       nb_model,
     data = data_for_stan,
-    chains=2, iter=1000
+    chains=2, iter=300, warmup=200
 )
 
 # MPI
 
-shards = 2
+shards = 4
 counts_stan_MPI =
   counts_stan %>%
   left_join(
@@ -303,7 +303,7 @@ fit_MPI =
   sampling(
       nb_model_MPI,
     data = data_for_stan_MPI,
-    chains=2, iter=1000
+    chains=2, iter=300, warmup=200
 )
 
 
@@ -315,7 +315,9 @@ fit_parsed %>%
   left_join(data_for_stan$symbols %>% mutate(G=1:n()) ) %>% left_join(
     fit_MPI_parsed %>%
     mean_qi() %>%
-    left_join(data_for_stan_MPI$symbols %>% gather(idx_MPI, symbol) %>% arrange(idx_MPI, symbol) %>% mutate(G=1:n()) ) ,
+    left_join(data_for_stan_MPI$symbols %>% gather(idx_MPI, symbol) %>%
+                drop_na() %>%
+                arrange(idx_MPI, symbol) %>% mutate(G=1:n()) ) ,
     by = c("symbol")
   ) %>%
 {ggplot((.),  aes(x = lambda.x, y = lambda.y , label=symbol , idx_MPI=idx_MPI, color=symbol=="AKR1C3")  ) + geom_point()} %>% plotly::ggplotly()
