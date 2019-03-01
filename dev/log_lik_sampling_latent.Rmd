@@ -1,0 +1,77 @@
+---
+title: "Log likelihood with latent variables by sampling"
+output: html_notebook
+---
+
+```{r}
+log_sum_exp <- function(x) { x <- sort(x) # mainly so max(x)==x[length(x)]
+                    n <- length(x)
+                    log1p(sum(exp(x[-n] - x[n]))) + x[n]
+                  }
+```
+
+N. binom via latent gamma
+
+```{r}
+test_n_binom <- function(x, lambda, phi, log = TRUE, N = 10000) {
+  exact <- dnbinom(x, mu = lambda, size = phi, log = log)
+  samples <- rgamma(N, phi, phi)
+  if(log) {
+    sampling <- log_sum_exp(dpois(x, lambda = lambda * samples, log = TRUE)) - log(N)
+  } else {
+    sampling <- mean(dpois(x, lambda = lambda * samples))
+  }
+  c(exact = exact, sampling = sampling)
+}
+
+test_n_binom(10, 11, 2, log = FALSE)
+test_n_binom(10, 11, 2, log = TRUE)
+test_n_binom(10, 1100, 10, log = TRUE)
+test_n_binom(10, 110, 10, log = TRUE)
+```
+
+
+```{r}
+ddirmultinom_log <- function(y, alpha) {
+  alpha_plus = sum(alpha);
+
+  lgamma(alpha_plus) + sum(lgamma(alpha + y)) + lgamma(sum(y) + 1)
+                  - lgamma(alpha_plus+sum(y)) - sum(lgamma(alpha)) - sum(lgamma(y + 1))
+  
+}
+
+test_dirichlet_multinom <- function(x, lambda, theta, N = 10000) {
+  exact <- ddirmultinom_log(x, alpha = lambda / theta)
+  
+  samples <- numeric(N)
+  for(n in 1:N) {
+    samples[n] <- dmultinom(x, prob = rgamma(length(x), lambda / theta, 1 / theta), log = TRUE)
+  }
+
+  sampling <- log_sum_exp(samples) - log(N)
+
+  c(exact = exact, sampling = sampling)
+}
+
+test_dirichlet_multinom(c(10,12,13,14,15), lambda = c(10,10,10,10,10), theta = 1)
+```
+
+```{r}
+
+test_dirichlet_multinom <- function(x, lambda, theta, N = 10000) {
+  exact <- ddirmultinom_log(x, alpha = lambda / theta)
+  
+  samples <- numeric(N)
+  phi = theta / lambda
+  for(n in 1:N) {
+    samples[n] <- dmultinom(x, prob = rgamma(length(x), phi, phi / lambda), log = TRUE)
+  }
+
+  sampling <- log_sum_exp(samples) - log(N)
+
+  c(exact = exact, sampling = sampling)
+}
+
+test_dirichlet_multinom(c(10,12,13,14,15), lambda = c(10,10,10,10,10), theta = 1)
+```
+

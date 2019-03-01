@@ -19,6 +19,7 @@ model_dirichlet_multinomial = stan_model(here("stan","dirichlet_multinomial_base
 model_multinomial = stan_model(here("stan","multinomial.stan"))
 model_lognormal_multinomial = stan_model(here("stan","logNormal_multinomial.stan"))
 model_nb_multinomial_approx = stan_model(here("stan","nb_multinomial_approx.stan"))
+model_nb_deseq2 = stan_model(here("stan","negBinomial_deseq2.stan"))
 ```
 
 # Multinomial
@@ -88,6 +89,16 @@ sums = G * 10 + rnbinom(N, mu = G * 50, size = 1)
 
 data = generate_data_gamma_multinomial(G, sums)
 fit = sampling(model_gamma_multinomial, data = data$observed)
+evaluation_summary(fit, data$true)
+```
+
+# Negative binomial, DeSEQ2 style
+```{r}
+G = 30
+N = 8
+
+data = generate_data_negbinomial_deseq2(G, N, asymptDisp = 4, extraPois = exp(3))
+fit = sampling(model_nb_deseq2, data = data$observed)
 evaluation_summary(fit, data$true)
 ```
 
