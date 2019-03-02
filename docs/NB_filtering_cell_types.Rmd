@@ -147,7 +147,7 @@ counts =
 Inference 
 
 ```{r predict_values cell_type, cache=TRUE}
-n_genes = 50
+n_genes = 5000
 
 set.seed(1325364)
 counts_stan = 
@@ -195,16 +195,16 @@ fileConn<-file("~/.R/Makevars")
 writeLines(c("CXX14FLAGS += -O3"), fileConn)
 close(fileConn)
 nb_model = stan_model(here("stan",sprintf("%s.stan", "negBinomial_tidy")))
-fit = 
-  sampling(
-      nb_model,
-    data = data_for_stan,
-    chains=2, iter=300, warmup=200
-)
+# fit = 
+#   sampling(
+#       nb_model,
+#     data = data_for_stan,
+#     chains=2, iter=300, warmup=200
+# )
 
 # MPI
 
-shards = 4
+shards = 50
 counts_stan_MPI =
   counts_stan %>%
   left_join(
@@ -297,13 +297,13 @@ data_for_stan_MPI = list(
 fileConn<-file("~/.R/Makevars")
 writeLines(c("CXX14FLAGS += -O3","CXX14FLAGS += -DSTAN_THREADS", "CXX14FLAGS += -pthread"), fileConn)
 close(fileConn)
-Sys.setenv("STAN_NUM_THREADS" = 11)
+Sys.setenv("STAN_NUM_THREADS" = 14)
 nb_model_MPI = stan_model(here("stan",sprintf("%s.stan", "negBinomial_tidy_MPI")))
 fit_MPI = 
   sampling(
       nb_model_MPI,
     data = data_for_stan_MPI,
-    chains=2, iter=300, warmup=200
+    chains=3, iter=300, warmup=200
 )
 
 
