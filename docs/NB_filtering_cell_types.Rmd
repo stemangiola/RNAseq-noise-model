@@ -415,7 +415,7 @@ fit_predicted =
   left_join(
     (.) %>%
     group_by(symbol) %>% 
-    summarise(`gene error mean` = `error scaled` %>% mean)
+    summarise(`gene error mean` = `error of log` %>% mean)
   )
 
 fit_predicted %>% 
