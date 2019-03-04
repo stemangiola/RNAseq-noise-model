@@ -130,4 +130,12 @@ int i = 1;
 	target += sum( map_rect( lp_reduce , global_parameters , lambda_sigma_MPI , xr , int_MPI ) );
 
 }
+generated quantities{
+  vector<lower=0>[G] sigma_raw_gen;
+  vector[G] lambda_gen;
 
+  for(g in 1:G) sigma_raw_gen[g] = lognormal_rng(sigma_slope * lambda[g] + sigma_intercept,sigma_sigma);
+  for(g in 1:G) lambda_gen[g] =  skew_normal_rng(lambda_mu,lambda_sigma, lambda_skew);
+
+
+}
