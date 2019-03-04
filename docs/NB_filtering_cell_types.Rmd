@@ -321,6 +321,16 @@ fit_parsed %>%
   ) %>%
 {ggplot((.),  aes(x = lambda.x, y = lambda.y , label=symbol , idx_MPI=idx_MPI, color=symbol=="AKR1C3")  ) + geom_point()} %>% plotly::ggplotly()
 
+
+    fit_parsed %>%
+    mean_qi() %>%
+    left_join(data_for_stan_MPI$symbols %>% gather(idx_MPI, symbol) %>%
+                drop_na() %>%
+                mutate(G=1:n()) )  %>%
+      left_join(counts_stan_MPI %>% select(symbol, `read count normalised`) %>% group_by(symbol) %>% summarise(`read count normalised` = `read count normalised` %>% `+` (1) %>% log %>% mean)) %>%
+{ggplot((.),  aes(x = lambda, y = `read count normalised` , label=symbol , idx_MPI=idx_MPI, color=symbol=="AKR1C3")  ) + geom_point()} %>% plotly::ggplotly()
+
+
 ```
 
 
@@ -363,17 +373,17 @@ fit_parsed %>%
   geom_freqpoly() + my_theme
 
 
-fit_predicted = fit_parsed %>% 
+fit_predicted = 
+  fit_parsed %>% 
   mean_qi() %>%
   left_join(
     data_for_stan_MPI$symbols %>% 
       gather(idx_MPI, symbol) %>%
       drop_na() %>%
-      arrange(idx_MPI, symbol) %>% 
       mutate(G=1:n()) 
-    ) %>%
+  ) %>%
   left_join(
-    counts_stan %>% select(symbol, `read count normalised`)
+    counts_stan %>% select(symbol, sample, `read count normalised`, `read count`)
   ) %>% 
   do_parallel_start(40, "symbol") %>%
  	do({
@@ -400,7 +410,17 @@ fit_predicted = fit_parsed %>%
  	}) %>%
   do_parallel_end() %>%
   mutate(`log of error` = (`read count normalised` - predicted_NB) %>% abs %>% `+` (1) %>% log) %>%
-  mutate(`error of log` = (log(`read count normalised` + 1) - log(predicted_NB + 1)) %>% abs )
+  mutate(`error of log` = (log(`read count normalised` + 1) - log(predicted_NB + 1)) %>% abs ) %>%
+  mutate(`error scaled` =  ((`read count normalised` - predicted_NB) / (`read count normalised` + 1) ) %>%  abs) %>%
+  left_join(
+    (.) %>%
+    group_by(symbol) %>% 
+    summarise(`gene error mean` = `error scaled` %>% mean)
+  )
+
+fit_predicted %>% 
+select(sample, symbol, `read count`, `read count normalised`, `gene error mean`) %>%
+write_csv("t_cells_with_error_qq_plot_means.csv")
 
 ```
 
@@ -429,7 +449,7 @@ Plot errors in rank
 ```{r}
 fit_predicted %>%
     group_by(symbol, lambda) %>% 
-    summarise(`error mean` = `error of log` %>% mean) %>%
+    summarise(`error mean` = `error scaled` %>% mean) %>%
     ungroup() %>%
     mutate(symbol = factor(symbol, levels= (.) %>% arrange(`error mean` %>% desc) %>% pull(symbol))) %>%
     ggplot(aes(x=symbol, y=`error mean`, color = lambda)) + geom_point()
