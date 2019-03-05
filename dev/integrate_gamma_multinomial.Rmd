@@ -1,0 +1,89 @@
+---
+title: "Integrating gamma-multinomial"
+output: html_notebook
+---
+```{r setup}
+library(tidyverse)
+devtools::load_all()
+```
+
+
+```{r}
+phi = 2
+lambda = c(1, 0.2)
+res = c(20,10)
+tibble(theta1 = seq(0.01, 5, length.out = 100)) %>% crossing(theta2 = seq(0.01, 5, length.out = 100)) %>%
+  mutate(density = dgamma(theta1,shape = phi, rate = phi) * dgamma(theta2,shape = phi, rate = phi)) %>%
+  rowwise() %>% mutate(density = density * dmultinom(res, prob = c(theta1, theta2) * lambda)) %>%
+  ungroup() %>%
+  ggplot(aes(x = theta1, y = theta2, fill = density)) + geom_raster() + scale_fill_distiller(palette = "Spectral")
+```
+
+```{r}
+log_ddirichlet <- function(x, alpha) {
+  lgamma(sum(alpha)) - sum(lgamma(alpha)) + sum((alpha - 1) * log(x))
+}
+
+plot_integral_approx <- function(N, phi, lambda, res) {
+  if(length(phi) != 1) {
+    stop("phi")
+  }
+  imp_sampling <- array(-1, N)
+  simple <- array(-1, N)
+  imp_sampling_log <- array(-1, N)
+  simple_log <- array(-1, N)
+  N_steps = min(100, N)
+  step_size = floor(N/N_steps)
+  for(n in 1:N) {
+    ## The simple way
+    gamma_samples <- rgamma(length(lambda), phi, phi/exp(lambda))
+    simple[n] <- dmultinom(res, prob = gamma_samples)
+    simple_log[n] <- dmultinom(res, prob = gamma_samples, log = TRUE)
+
+    ## Importance sampling
+    proposal_normalized <- MCMCpack::rdirichlet(1, res + 0.5)[1,]
+    proposal_s <- rgamma(1, length(lambda) * phi, phi) / sum(proposal_normalized / exp(lambda))
+    
+    log_weight <-  lgamma(length(lambda) * phi) + sum(log(proposal_normalized)) -
+      length(lambda) * lgamma(phi) - (length(lambda) - 1) * log(proposal_s) -
+      (length(lambda) * phi - 1) * log(sum(proposal_normalized / exp(lambda))) -
+      log_ddirichlet(proposal_normalized, res + 0.5)
+      #log(MCMCpack::ddirichlet(proposal_normalized, res + 0.5))
+    
+    imp_sampling[n] <- exp(log_weight) * dmultinom(res, prob = proposal_normalized)
+    imp_sampling_log[n] <- log_weight + dmultinom(res, prob = proposal_normalized, log = TRUE)
+    
+  }
+  integral_simple <- array(-1, N_steps)
+  integral_imp_sampling <- array(-1, N_steps)
+  integral_simple_log <- array(-1, N_steps)
+  integral_imp_sampling_log <- array(-1, N_steps)
+  for(step in 1:N_steps) {
+    integral_simple[step] <- log(mean(simple[1:(step * step_size)]))
+    integral_imp_sampling[step] <- log(mean(imp_sampling[1:(step * step_size)]))
+    integral_simple_log[step] <- logsumexp(simple_log[1:(step * step_size)]) - log(step * step_size)
+    integral_imp_sampling_log[step] <- logsumexp(imp_sampling_log[1:(step * step_size)]) - log(step * step_size)
+  }
+  tibble(n = (1:N_steps) * step_size, integral_simple, integral_imp_sampling, integral_simple_log, integral_imp_sampling_log) %>% 
+    gather("type","value", -n) %>%
+    ggplot(aes(x=n, y = value, color = type)) + geom_line()
+}
+
+plot_integral_approx_d <- function(N, d) {
+  lambda = rnorm(d, 0, 2)
+  plot_integral_approx(N, 
+                       phi = 1 / sqrt(abs(rnorm(1, 0, 1))),
+                       lambda = lambda,
+                       res = rmultinom(1, size = 100 * d, prob = exp(lambda))[,1]
+                       )
+}
+
+set.seed(345666)
+plot_integral_approx_d(10000, 2)
+```
+```{r}
+N = 1e6
+plot_integral_approx_d(N, 100)
+
+```
+
