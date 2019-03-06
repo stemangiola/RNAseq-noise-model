@@ -160,7 +160,7 @@ counts_stan =
   # filter(n == 58) %>%
   #
   
-  inner_join( (.) %>% distinct(symbol) %>% sample_n(n_genes) ) %>%
+  #inner_join( (.) %>% distinct(symbol) %>% sample_n(n_genes) ) %>%
   
   # Add sample idx
   mutate(sample_idx = as.integer(sample)) 
@@ -299,15 +299,21 @@ writeLines(c("CXX14FLAGS += -O3","CXX14FLAGS += -DSTAN_THREADS", "CXX14FLAGS += 
 close(fileConn)
 Sys.setenv("STAN_NUM_THREADS" = 14)
 nb_model_MPI = stan_model(here("stan",sprintf("%s.stan", "negBinomial_tidy_MPI")))
+Sys.time()
 fit_MPI = 
   sampling(
       nb_model_MPI,
     data = data_for_stan_MPI,
     chains=3, iter=300, warmup=200
 )
+save(fit_MPI, file="fit_MPI_05032019.RData")
+Sys.time()
+
+#fit_parsed = fit_MPI %>% spread_draws(lambda[G], sigma[G], sigma_raw[G], sigma_raw_gen[G], lambda_gen[G])
+
+fit_parsed = fit_MPI %>% summary() %$% summary %>% as_tibble(rownames="par") %>% filter(grepl("lambda|sigma", par)) %>% separate(par, c("par", "G"), sep="\\[|\\]") %>% select(par, G, "50%") %>% spread(par, "50%") %>% mutate(G = G %>% as.integer)
 
 
-fit_parsed = fit_MPI %>% spread_draws(lambda[G], sigma[G], sigma_raw[G], sigma_raw_gen[G], lambda_gen[G])
 
 fit_parsed %>%
   mean_qi() %>%
@@ -336,10 +342,10 @@ fit_parsed %>%
 
 ```{r}
 fit_parsed %>% 
-    median_qi() %>% 
+    #median_qi() %>% 
     
     left_join(
-      fit_parsed %>% group_by(G) %>% do( (.) %>% head(n=1) ) %>% ungroup() %>% select(G, sigma_raw_gen) %>% rename(gen_quant = sigma_raw_gen)
+      rstan::extract(fit_MPI, "sigma_raw_gen") %>% as.data.frame %>% as_tibble() %>% head(n=1) %>% gather(G, gen_quant) %>% mutate(G=1:n())
     ) %>%
     
     left_join(
@@ -351,22 +357,22 @@ fit_parsed %>%
     gather(is_real, my_sigma,  c("sigma_raw", "gen_quant")) %>%
     ggplot(aes(x=lambda, y=my_sigma, lable=symbol, color=is_real)) + 
     geom_point(alpha=0.5) +
-    # stat_function(
-    #     fun = function(x) {
-    #         slope =  fit_MPI %>% rstan::extract(pars="sigma_slope") %>% as.data.frame %>% as_tibble %>% pull(1) %>% median
-    #         intercept = fit_MPI %>% rstan::extract(pars="sigma_intercept") %$% sigma_intercept %>% median()
-    #         (slope * x + intercept) ;
-    #     },
-    #     geom="line"
-    # ) +
+    stat_function(
+        fun = function(x) {
+            slope =  fit_MPI %>% rstan::extract(pars="sigma_slope") %>% as.data.frame %>% as_tibble %>% pull(1) %>% median
+            intercept = fit_MPI %>% rstan::extract(pars="sigma_intercept") %$% sigma_intercept %>% median()
+            (slope * x + intercept) ;
+        },
+        geom="line"
+    ) +
   # geom_abline(slope = -0.35, intercept = 0.50) +
   #stat_smooth( method="lm", formula= (y ~ exp(x)) ) +
-  scale_y_log10() + my_theme
+  scale_y_continuous(trans="log") + my_theme
 		
 fit_parsed %>% 
-  median_qi() %>%   
+  #median_qi() %>%   
   left_join(
-      fit_parsed %>% group_by(G) %>% do( (.) %>% head(n=1) ) %>% ungroup() %>% select(G, lambda_gen) %>% rename(gen_quant = lambda_gen)
+      rstan::extract(fit_MPI, "lambda_gen") %>% as.data.frame %>% as_tibble() %>% head(n=1) %>% gather(G, gen_quant) %>% mutate(G=1:n())
     ) %>%  
   gather(is_real, my_lambda,  c("lambda", "gen_quant")) %>%
   ggplot(aes(my_lambda, color=is_real)) +
