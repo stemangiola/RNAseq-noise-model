@@ -381,7 +381,7 @@ fit_parsed %>%
 
 fit_predicted = 
   fit_parsed %>% 
-  mean_qi() %>%
+  #mean_qi() %>%
   left_join(
     data_for_stan_MPI$symbols %>% 
       gather(idx_MPI, symbol) %>%
