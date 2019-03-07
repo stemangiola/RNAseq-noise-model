@@ -31,43 +31,46 @@ options(mc.cores = parallel::detectCores())
 
 ```{r}
 
-N = 50
-G = 10
-counts_source = "Acute_Myeloid_Leukemia_Primary_Blood_Derived_Cancer_-_Peripheral_Blood"
-
-counts_tidy <- load_test_data(N, G, counts_source)
-data_for_stan = data_for_stan_from_tidy(N, G, counts_tidy)
+# N = 50
+# G = 10
+# counts_source = "Acute_Myeloid_Leukemia_Primary_Blood_Derived_Cancer_-_Peripheral_Blood"
+# 
+# counts_tidy <- load_test_data(N, G, counts_source)
+# data_for_stan = data_for_stan_from_tidy(N, G, counts_tidy)
 ```
 
 
 ```{r}
-# bad_genes_file <- here::here("local_temp_data","bad_genes.rds")
-# bad_genes <- c("ATF3", "CDKN1A", "COX1","CST3","EGR1","FOSB", "HIST1H3A,p1","LYZ","NR4A3","RN7SL5P",
-#                "RPL15P3","RPS3AP6","RRM2","S100A9","SNORA12","SNORA16A","SNORA20","SOX4","TYROBP","uc004cos.3")
-# 
-# raw_data <- read_csv(here("big_data", "tibble_TCGA_files", paste0(counts_source, ".csv")))
-# data_bad_genes <- raw_data %>%
-#     counts_tidy =
-#       raw_data %>%
-#       filter(sample %in% ( (.) %>% distinct(sample) %>% head(n=N) %>% pull(sample)) ) %>%
-#       filter(ens_iso %in% bad_genes) %>%
-#       mutate_if(is.character, as.factor) %>%
-# 
-#       # Add numerical indexes
-#       left_join(
-#         (.) %>%
-#           distinct(ens_iso) %>%
-#           arrange(ens_iso) %>%
-#           mutate(ens_iso_idx = 1:n())
-#       ) %>%
-#       left_join(
-#         (.) %>%
-#           distinct(sample) %>%
-#           arrange(sample) %>%
-#           mutate(sample_idx = 1:n())
-#       )
+N = 50
+G = 10
 
+
+data_problematic_raw <- readr::read_csv(here("local_temp_data","t_cells_with_error_qq_plot_means.csv"), col_types = cols(
+  sample = col_character(),
+  symbol = col_character(),
+  `read count` = col_double(),
+  `read count normalised` = col_double(),
+  `gene error mean` = col_double()
+))
+
+
+
+N_samples_total <- length(unique(data_problematic_raw$sample))
+
+problematic_genes <- data_problematic_raw %>% group_by(symbol, `gene error mean`) %>% 
+  summarise(N_samples = n()) %>% ungroup() %>% filter(N_samples == N_samples_total) %>% distinct() %>% arrange(desc(`gene error mean`)) %>% head(G) %>% pull(symbol)
+
+data_bad_genes <- 
+      data_problematic_raw %>%
+      filter(sample %in% ( (.) %>% distinct(sample) %>% head(N) %>% pull(sample)) ) %>%
+      filter(symbol %in% problematic_genes) %>%
+      dplyr::rename(ens_iso = symbol) %>%
+      mutate_if(is.character, as.factor) %>%
+      mutate(`read count` = as.integer(`read count`))
+
+data_for_stan_bad_genes <- data_for_stan_from_tidy(N, G, data_bad_genes)
 ```
+
 
 
 ```{r}
@@ -76,12 +79,13 @@ model_defs = data.frame(model_name = c(
   "negBinomial",
   "gamma_multinomial",
   "logNormal_multinomial",
-  "multinomial"
+  "multinomial" #,
+#  "negBinomial_deseq2_multinomial"
   ), adapt_delta = c(0.8, 0.8, 0.95, 0.95, 0.8))
 ```
 
 ```{r}
-deseq_normalization <- estimateSizeFactorsForMatrix(t(data_for_stan$counts))
+deseq_normalization <- estimateSizeFactorsForMatrix(t(data_for_stan_bad_genes$counts))
 ```
 
 
@@ -92,9 +96,9 @@ set.seed(1346842485)
 
 N_samples_gamma_log_lik <- 10000
 #Copy the data for all runs
-kfold_def <- prepare_kfold(K, model_defs, data_for_stan)
+kfold_def <- prepare_kfold(K, model_defs, data_for_stan_bad_genes)
 for(i in 1:nrow(kfold_def$model_defs_kfold)) {
-  if(kfold_def$model_defs_kfold$model_name[i] == "negBinomial_deseq2") {
+  if(kfold_def$model_defs_kfold$model_name[i] %in% c("negBinomial_deseq2","negBinomial_deseq2_multinomial")) {
     kfold_def$data_list[[i]]$normalization = deseq_normalization
     kfold_def$data_list[[i]]$my_prior = c(5, 3)
   }

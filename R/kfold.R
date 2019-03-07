@@ -55,7 +55,7 @@ run_kfold <- function(kfold_def, name_for_cache) {
     extract_log_lik_K(fits_for_model, holdout_for_model, "log_lik")
   })
 
-  res_names <- kfold_def$model_defs %>% unite(full_name) %>% pull(full_name)
+  res_names <- kfold_def$model_defs %>% unite(full_name, -id) %>% pull(full_name)
   kfold_res <- kfold_log_lik %>%
     map(kfold) %>%
     set_names(res_names)
