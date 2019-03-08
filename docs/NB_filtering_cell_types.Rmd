@@ -60,14 +60,16 @@ counts =
 	foreach(
 		f = dir(
 			path = 	here("big_data", "tibble_cellType_files"), 
-			pattern="tibble_cellTypes_t_",
+			pattern="cellTypes_t_",
 			full.names = T
 		),
 		.combine = bind_rows
 	) %dopar% {
-		read_csv(f) %>% mutate(sample = sample %>% as.character, isoform = isoform %>% as.character)
-	} %>%
-	
+		read_csv(f) %>% 
+	    mutate_at(vars(one_of('sample')), as.character) %>%
+	    mutate_at(vars(one_of('isoform')), as.character) 
+	}  %>%
+
   filter(symbol %>% is.na %>% `!`) %>%
   
 	# Median redundant
@@ -160,7 +162,8 @@ counts_stan =
   # filter(n == 58) %>%
   #
   
-  #inner_join( (.) %>% distinct(symbol) %>% sample_n(n_genes) ) %>%
+  #filter(symbol%in%c("A2M-AS1", "A1BG")) %>%
+  inner_join( (.) %>% distinct(symbol) %>% sample_n(n_genes) ) %>%
   
   # Add sample idx
   mutate(sample_idx = as.integer(sample)) 
