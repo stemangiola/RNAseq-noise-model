@@ -52,7 +52,7 @@ source("https://gist.githubusercontent.com/stemangiola/dd3573be22492fc03856cd2c5
 ```
 
 
-# Cell types - t cells
+# Cell types - root node
 
 ```{r load_data cell_type, cache=TRUE}
 
@@ -60,14 +60,16 @@ counts =
 	foreach(
 		f = dir(
 			path = 	here("big_data", "tibble_cellType_files"), 
-			pattern="tibble_cellTypes_t_",
+			pattern="cellTypes_t_",
 			full.names = T
 		),
 		.combine = bind_rows
 	) %dopar% {
-		read_csv(f) %>% mutate(sample = sample %>% as.character, isoform = isoform %>% as.character)
-	} %>%
-	
+		read_csv(f) %>% 
+	    mutate_at(vars(one_of('sample')), as.character) %>%
+	    mutate_at(vars(one_of('isoform')), as.character) 
+	}  %>%
+
   filter(symbol %>% is.na %>% `!`) %>%
   
 	# Median redundant
@@ -160,7 +162,8 @@ counts_stan =
   # filter(n == 58) %>%
   #
   
-  #inner_join( (.) %>% distinct(symbol) %>% sample_n(n_genes) ) %>%
+  #filter(symbol%in%c("A2M-AS1", "A1BG")) %>%
+  inner_join( (.) %>% distinct(symbol) %>% sample_n(n_genes) ) %>%
   
   # Add sample idx
   mutate(sample_idx = as.integer(sample)) 
@@ -235,8 +238,9 @@ data_for_stan_MPI = list(
   M = counts_stan_MPI %>% distinct(start, idx_MPI) %>% count(idx_MPI) %>% pull(n) %>% max,
   G = counts_stan_MPI %>% distinct(symbol) %>% nrow(),
   S = counts_stan_MPI %>% distinct(sample) %>% nrow(),
-  n_shards = shards,
+  D = counts_stan_MPI %>% distinct(`Data base`) %>% nrow(),
   G_per_shard = counts_stan_MPI %>% distinct(symbol, idx_MPI) %>% count(idx_MPI) %>% pull(n) %>% as.array,
+  n_shards = min(shards, counts_stan_MPI %>% distinct(idx_MPI) %>% nrow),
   G_per_shard_idx = c(0, counts_stan_MPI %>% distinct(symbol, idx_MPI) %>% count(idx_MPI) %>% pull(n) %>% cumsum),
   
   
@@ -253,12 +257,12 @@ data_for_stan_MPI = list(
     mutate_if(is.numeric, as.integer) %>%
     as_matrix() %>% t,
   
-  symbol_start =   
+  symbol_end =   
     foreach(idx = counts_stan_MPI %>% distinct(idx_MPI) %>% pull(idx_MPI), .combine = full_join) %do% {
       counts_stan_MPI %>%
       filter(idx_MPI == idx) %>%
-      distinct(start) %>% 
-      rbind(  counts_stan_MPI %>% filter(idx_MPI == idx) %>% pull(end) %>% max) %>%
+      distinct(end) %>% 
+      rbind(0, .) %>%
       #mutate(start = start - ( (.) %>% head(n=1) %>% pull(start)) + 1) %>%
       setNames(idx) %>%
       mutate(i = 1:n())
@@ -290,8 +294,20 @@ data_for_stan_MPI = list(
     select(-i) %>%
     replace(is.na(.), 0) %>%
     mutate_if(is.numeric, as.integer) %>%
-    as_matrix() %>% t
-
+    as_matrix() %>% t,
+  
+  X = counts %>% 
+    distinct(sample, `Data base`) %>% 
+    mutate(
+      `Data base` = `Data base` %>% factor(levels=
+         counts %>% 
+         distinct(sample, `Data base`) %>% 
+         count(`Data base`) %>% 
+         arrange(n %>% desc) %>% 
+         pull(`Data base`)
+       )
+    ) %>% 
+    model.matrix(~ `Data base`, .)
 )
 
 fileConn<-file("~/.R/Makevars")
@@ -306,7 +322,7 @@ fit_MPI =
     data = data_for_stan_MPI,
     chains=3, iter=300, warmup=200
 )
-save(fit_MPI, file="fit_MPI_05032019.RData")
+#save(fit_MPI, file="fit_MPI_05032019.RData")
 Sys.time()
 
 #fit_parsed = fit_MPI %>% spread_draws(lambda[G], sigma[G], sigma_raw[G], sigma_raw_gen[G], lambda_gen[G])
@@ -518,7 +534,7 @@ counts_TCGA =
 # non MPI
 
 set.seed(1325364)
-num_genes = 100
+num_genes = 5000
 
 counts_stan = 
   counts_TCGA %>%
@@ -562,18 +578,18 @@ writeLines(c("CXX14FLAGS += -O3"), fileConn)
 close(fileConn)
 nb_model = stan_model(here("stan",sprintf("%s.stan", "negBinomial_tidy")))
 
-system.time(
-  sampling(
-      nb_model,
-    data = data_for_stan,
-    chains=1, iter=500
-))
-fit_parsed = fit %>% spread_draws(lambda[G], sigma[G], sigma_raw[G], sigma_raw_gen[G])
-fit %>% summary() %$% summary %>% as_tibble(rownames="par")
+# system.time(
+#   sampling(
+#       nb_model,
+#     data = data_for_stan,
+#     chains=1, iter=500
+# ))
+# fit_parsed = fit %>% spread_draws(lambda[G], sigma[G], sigma_raw[G], sigma_raw_gen[G])
+# fit %>% summary() %$% summary %>% as_tibble(rownames="par")
 ####
 
 # MPI
-shards = 10
+shards = 56
 counts_stan_MPI =
   counts_stan %>%
   
@@ -637,15 +653,14 @@ data_for_stan_MPI = list(
 fileConn<-file("~/.R/Makevars")
 writeLines(c("CXX14FLAGS += -O3","CXX14FLAGS += -DSTAN_THREADS", "CXX14FLAGS += -pthread"), fileConn)
 close(fileConn)
-Sys.setenv("STAN_NUM_THREADS" = 11)
+Sys.setenv("STAN_NUM_THREADS" = 14)
 nb_model_MPI = stan_model(here("stan",sprintf("%s.stan", "negBinomial_tidy_MPI")))
-system.time(
+fit_MPI_TCGA =
   sampling(
       nb_model_MPI,
     data = data_for_stan_MPI,
-    chains=1, iter=500
-))
-
+    chains=3, iter=300, warmup=200
+)
 ###
 
 # MPI2
@@ -682,28 +697,46 @@ system.time(
 
 load("fit_parsed_500_genes_TCGA_leukimia_18022019.RData")
 
+fit_parsed_TCGA = fit_MPI_TCGA %>% summary() %$% summary %>% as_tibble(rownames="par") %>% filter(grepl("lambda|sigma", par)) %>% separate(par, c("par", "G"), sep="\\[|\\]") %>% select(par, G, "50%") %>% spread(par, "50%") %>% mutate(G = G %>% as.integer)
 
-fit_parsed %>% 
-  mean_qi() %>% 
-  
-  left_join(
-    fit_parsed %>% group_by(G) %>% do( (.) %>% head(n=1) ) %>% ungroup() %>% select(G, sigma_raw_gen) %>% rename(gen_quant = sigma_raw_gen)
-  ) %>%
-  
-  left_join(
-    counts_stan %>% distinct(ens_iso) %>% mutate(G=1:n())
-  ) %>%
-  gather(is_real, my_sigma,  c("sigma_raw", "gen_quant")) %>%
-  ggplot(aes(x=lambda, y=my_sigma, lable=ens_iso, color=is_real)) + geom_point() +
-	stat_function(
-		fun = function(x) {
-		  slope =  fit %>% rstan::extract(pars="sigma_slope") %>% as.data.frame %>% as_tibble %>% pull(1) %>% median
-		  intercept = fit %>% rstan::extract(pars="sigma_intercept") %$% sigma_intercept %>% median()
-			exp(slope * x + intercept) ;
-		}, 
-		geom="line"
-	)
+fit_parsed_TCGA %>% 
+    #median_qi() %>% 
+    
+    left_join(
+      rstan::extract(fit_MPI_TCGA, "sigma_raw_gen") %>% as.data.frame %>% as_tibble() %>% head(n=1) %>% gather(G, gen_quant) %>% mutate(G=1:n())
+    ) %>%
+    
+    # left_join(
+    #   data_for_stan_MPI$ens_iso %>% 
+    #     gather(idx_MPI, symbol) %>%
+    #   drop_na() %>%
+    #   arrange(idx_MPI, symbol) %>% mutate(G=1:n()) 
+    # ) %>%
+    gather(is_real, my_sigma,  c("sigma_raw", "gen_quant")) %>%
+    ggplot(aes(x=lambda, y=my_sigma,  color=is_real)) + 
+    geom_point(alpha=0.5) +
+    stat_function(
+        fun = function(x) {
+            slope =  fit_MPI %>% rstan::extract(pars="sigma_slope") %>% as.data.frame %>% as_tibble %>% pull(1) %>% median
+            intercept = fit_MPI %>% rstan::extract(pars="sigma_intercept") %$% sigma_intercept %>% median()
+            (slope * x + intercept) ;
+        },
+        geom="line"
+    ) +
+  # geom_abline(slope = -0.35, intercept = 0.50) +
+  #stat_smooth( method="lm", formula= (y ~ exp(x)) ) +
+  scale_y_continuous(trans="log") + my_theme
 		
+fit_parsed %>% 
+  #median_qi() %>%   
+  left_join(
+      rstan::extract(fit_MPI, "lambda_gen") %>% as.data.frame %>% as_tibble() %>% head(n=1) %>% gather(G, gen_quant) %>% mutate(G=1:n())
+    ) %>%  
+  gather(is_real, my_lambda,  c("lambda", "gen_quant")) %>%
+  ggplot(aes(my_lambda, color=is_real)) +
+  geom_freqpoly() + my_theme
+
+
 fit_predicted = fit_parsed %>% 
   mean_qi() %>%
   left_join(
