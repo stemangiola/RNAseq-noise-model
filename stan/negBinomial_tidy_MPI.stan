@@ -14,10 +14,12 @@ functions{
 
    matrix[D,G_per_shard] lambda_MPI = to_matrix(local_parameters[1:(G_per_shard*D)], G_per_shard, D)';
    vector[G_per_shard] sigma_MPI = local_parameters[((G_per_shard*D)+1):((G_per_shard*D) + G_per_shard)];
-   vector[S] exposure_rate = local_parameters[((G_per_shard*D) + G_per_shard +1):rows(local_parameters)];
+   vector[S] exposure_rate = local_parameters[((G_per_shard*D) + G_per_shard +1):((G_per_shard*D) + G_per_shard + S)];
 
    matrix[symbol_end[G_per_shard+1], G_per_shard] lambda_MPI_X = X[sample_idx[1:symbol_end[G_per_shard+1]]] * lambda_MPI;
    vector[G_per_shard] lp;
+
+//print(lambda_MPI');
 
 //print(sample_idx[1:symbol_end[G_per_shard+1]]);
   for(g in 1:G_per_shard){
@@ -107,7 +109,9 @@ transformed parameters {
 	vector[M * (D + 1)] lambda_sigma_MPI[n_shards];
 	for( i in 1:(n_shards) ) {
 
-	  vector[ (M * (D + 1)) - (G_per_shard[i]*(D+1)) ] buffer = rep_vector(0.0,(M * (D + 1)) - (G_per_shard[i]*(D+1)));
+	  vector[ (M - G_per_shard[i]) * (D + 1) ] buffer = rep_vector(0.0,(M * (D + 1)) - (G_per_shard[i]*(D+1)));
+
+
 
 		lambda_sigma_MPI[i] =
   		append_row(
@@ -116,12 +120,14 @@ transformed parameters {
         		to_vector(lambda[(G_per_shard_idx[i]+1):(G_per_shard_idx[i+1])]),
       		  sigma[(G_per_shard_idx[i]+1):(G_per_shard_idx[i+1])]
       		),
-      		buffer
+      		exposure_rate
       	),
-      	exposure_rate
+      	buffer
       );
 
 	}
+
+//	print(lambda);
 
 }
 model {
@@ -154,7 +160,7 @@ generated quantities{
   vector<lower=0>[G] sigma_raw_gen;
   vector[G] lambda_gen;
 
-  for(g in 1:G) sigma_raw_gen[g] = lognormal_rng(sigma_slope * lambda[g,1] + sigma_intercept,sigma_sigma);
+  for(g in 1:G) sigma_raw_gen[g] = normal_rng(sigma_slope * lambda[g,1] + sigma_intercept,sigma_sigma);
   for(g in 1:G) lambda_gen[g] =  skew_normal_rng(lambda_mu,lambda_sigma, lambda_skew);
 
 

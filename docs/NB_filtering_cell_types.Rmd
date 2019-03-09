@@ -327,7 +327,18 @@ Sys.time()
 
 #fit_parsed = fit_MPI %>% spread_draws(lambda[G], sigma[G], sigma_raw[G], sigma_raw_gen[G], lambda_gen[G])
 
-fit_parsed = fit_MPI %>% summary() %$% summary %>% as_tibble(rownames="par") %>% filter(grepl("lambda|sigma", par)) %>% separate(par, c("par", "G"), sep="\\[|\\]") %>% select(par, G, "50%") %>% spread(par, "50%") %>% mutate(G = G %>% as.integer)
+fit_parsed = 
+  fit_MPI %>% summary() %$% summary %>% 
+  as_tibble(rownames="par") %>% 
+  filter(grepl("lambda|sigma", par)) %>% 
+  separate(par, c("par", "G", "D"), sep="\\[|\\]|,") %>% 
+  filter( par %in% c("lambda", "sigma", "sigma_raw")) %>% 
+  mutate(D = ifelse(grepl("sigma", par), 1, D)) %>%
+  #filter(!grepl("_", par)) %>%
+  select(par, G, D, "50%") %>% 
+  spread(par, "50%") %>% 
+  mutate(G = G %>% as.integer) %>%
+  filter(D == 1)
 
 
 
