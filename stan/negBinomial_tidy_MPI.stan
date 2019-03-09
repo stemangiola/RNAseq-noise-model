@@ -109,9 +109,7 @@ transformed parameters {
 	vector[M * (D + 1)] lambda_sigma_MPI[n_shards];
 	for( i in 1:(n_shards) ) {
 
-	  vector[ (M - G_per_shard[i]) * (D + 1) ] buffer = rep_vector(0.0,(M * (D + 1)) - (G_per_shard[i]*(D+1)));
-
-
+	 // vector[ (M - G_per_shard[i]) * (D + 1) ] buffer = rep_vector(0.0,(M * (D + 1)) - (G_per_shard[i]*(D+1)));
 
 		lambda_sigma_MPI[i] =
   		append_row(
@@ -122,7 +120,7 @@ transformed parameters {
       		),
       		exposure_rate
       	),
-      	buffer
+      	rep_vector(0.0, (M - G_per_shard[i]) * (D + 1))
       );
 
 	}
@@ -149,7 +147,7 @@ model {
   // Gene-wise properties of the data
   // lambda ~ normal_or_gammaLog(lambda_mu, lambda_sigma, is_prior_asymetric);
   lambda[,1] ~  skew_normal(lambda_mu,lambda_sigma, lambda_skew);
-  to_vector(lambda[,2:D]) ~ normal(0,1);
+  if(D>1) to_vector(lambda[,2:D]) ~ normal(0,1);
   sigma_raw ~ normal(sigma_slope * lambda[,1] + sigma_intercept,sigma_sigma);
 
 	// Gene-wise properties of the data
@@ -157,7 +155,7 @@ model {
 
 }
 generated quantities{
-  vector<lower=0>[G] sigma_raw_gen;
+  vector[G] sigma_raw_gen;
   vector[G] lambda_gen;
 
   for(g in 1:G) sigma_raw_gen[g] = normal_rng(sigma_slope * lambda[g,1] + sigma_intercept,sigma_sigma);
