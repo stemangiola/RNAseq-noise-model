@@ -151,6 +151,8 @@ Inference
 ```{r predict_values cell_type, cache=TRUE}
 n_genes = 5000
 
+n_genes = 5000
+
 set.seed(1325364)
 counts_stan = 
   counts %>%
@@ -238,8 +240,9 @@ data_for_stan_MPI = list(
   M = counts_stan_MPI %>% distinct(start, idx_MPI) %>% count(idx_MPI) %>% pull(n) %>% max,
   G = counts_stan_MPI %>% distinct(symbol) %>% nrow(),
   S = counts_stan_MPI %>% distinct(sample) %>% nrow(),
-  n_shards = shards,
+  D = 1, #counts_stan_MPI %>% distinct(`Data base`) %>% nrow(),
   G_per_shard = counts_stan_MPI %>% distinct(symbol, idx_MPI) %>% count(idx_MPI) %>% pull(n) %>% as.array,
+  n_shards = min(shards, counts_stan_MPI %>% distinct(idx_MPI) %>% nrow),
   G_per_shard_idx = c(0, counts_stan_MPI %>% distinct(symbol, idx_MPI) %>% count(idx_MPI) %>% pull(n) %>% cumsum),
   
   
@@ -256,12 +259,12 @@ data_for_stan_MPI = list(
     mutate_if(is.numeric, as.integer) %>%
     as_matrix() %>% t,
   
-  symbol_start =   
+  symbol_end =   
     foreach(idx = counts_stan_MPI %>% distinct(idx_MPI) %>% pull(idx_MPI), .combine = full_join) %do% {
       counts_stan_MPI %>%
       filter(idx_MPI == idx) %>%
-      distinct(start) %>% 
-      rbind(  counts_stan_MPI %>% filter(idx_MPI == idx) %>% pull(end) %>% max) %>%
+      distinct(end) %>% 
+      rbind(0, .) %>%
       #mutate(start = start - ( (.) %>% head(n=1) %>% pull(start)) + 1) %>%
       setNames(idx) %>%
       mutate(i = 1:n())
@@ -294,7 +297,6 @@ data_for_stan_MPI = list(
     replace(is.na(.), 0) %>%
     mutate_if(is.numeric, as.integer) %>%
     as_matrix() %>% t
-
 )
 
 fileConn<-file("~/.R/Makevars")

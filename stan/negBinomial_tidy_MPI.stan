@@ -5,7 +5,7 @@ functions{
 	 	int N = xi[2];
 	 	int S = xi[3];
 	 	int G_per_shard = xi[4];
-	 	int symbol_start[M+1] = xi[(4+1):(4+1+M)];
+	 	int symbol_end[M+1] = xi[(4+1):(4+1+M)];
 	 	int sample_idx[N] = xi[(4+1+M+1):(4+1+M+1+N-1)];
 	 	int counts[N] = xi[(4+1+M+1+N):size(xi)];
 
@@ -19,8 +19,8 @@ functions{
 
 	 for(g in 1:G_per_shard){
 	 	lp[g] =  neg_binomial_2_log_lpmf(
-	 	  counts[symbol_start[g]:symbol_start[g+1]-1] |
-	 	  exposure_rate[sample_idx[symbol_start[g]:symbol_start[g+1]-1]] +
+	 	  counts[(symbol_end[g]+1):symbol_end[g+1]] |
+	 	  exposure_rate[sample_idx[(symbol_end[g]+1):symbol_end[g+1]]] +
 	 	  lambda_MPI[g],
 	 	  sigma_MPI[g]
 	 	 );
@@ -38,7 +38,7 @@ data {
 	int<lower=0> S;
   int n_shards;
 	int<lower=0> counts[n_shards, N];
-	int<lower=0> symbol_start[n_shards, M+1];
+	int<lower=0> symbol_end[n_shards, M+1];
 	int<lower=0> sample_idx[n_shards, N];
 	int<lower=0> G_per_shard[n_shards];
 	int<lower=0> G_per_shard_idx[n_shards + 1];
@@ -58,7 +58,7 @@ transformed data {
   M_N_Gps[3] = S;
   M_N_Gps[4] = G_per_shard[i];
 
-  int_MPI[i,] = append_array(append_array(append_array(M_N_Gps, symbol_start[i]), sample_idx[i]), counts[i]);
+  int_MPI[i,] = append_array(append_array(append_array(M_N_Gps, symbol_end[i]), sample_idx[i]), counts[i]);
 
   }
 }
@@ -71,7 +71,7 @@ parameters {
 
   // Gene-wise properties of the data
   vector[G] lambda;
-  vector<lower=0>[G] sigma_raw;
+  vector[G] sigma_raw;
 
   // Signa linear model
 
@@ -82,7 +82,7 @@ parameters {
 }
 transformed parameters {
   // Sigma
-  vector[G] sigma = 1.0 ./ sigma_raw;
+  vector[G] sigma = 1.0 ./ exp(sigma_raw);
 
 // Shards - MPI
 	vector[2*M] lambda_sigma_MPI[n_shards];
@@ -124,17 +124,17 @@ int i = 1;
   // Gene-wise properties of the data
   // lambda ~ normal_or_gammaLog(lambda_mu, lambda_sigma, is_prior_asymetric);
   lambda ~  skew_normal(lambda_mu,lambda_sigma, lambda_skew);
-  sigma_raw ~ lognormal(sigma_slope * lambda + sigma_intercept,sigma_sigma);
+  sigma_raw ~ normal(sigma_slope * lambda + sigma_intercept,sigma_sigma);
 
 	// Gene-wise properties of the data
 	target += sum( map_rect( lp_reduce , global_parameters , lambda_sigma_MPI , xr , int_MPI ) );
 
 }
 generated quantities{
-  vector<lower=0>[G] sigma_raw_gen;
+  vector[G] sigma_raw_gen;
   vector[G] lambda_gen;
 
-  for(g in 1:G) sigma_raw_gen[g] = lognormal_rng(sigma_slope * lambda[g] + sigma_intercept,sigma_sigma);
+  for(g in 1:G) sigma_raw_gen[g] = normal_rng(sigma_slope * lambda[g] + sigma_intercept,sigma_sigma);
   for(g in 1:G) lambda_gen[g] =  skew_normal_rng(lambda_mu,lambda_sigma, lambda_skew);
 
 
