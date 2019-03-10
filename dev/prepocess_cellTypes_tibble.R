@@ -97,7 +97,7 @@ get_FANTOM5 = function(){
         mutate(`Cell type formatted` = ifelse(grepl("Monocyte-derived macrophages 0h", onto_value, ignore.case = T), "macrophage", `Cell type formatted`)) %>%
         mutate(`Cell type formatted` = ifelse(grepl("Monocyte-derived macrophages repsonse to LPS, 00hr00", onto_value, ignore.case = T), "macrophage", `Cell type formatted`)) %>%
         mutate(`Cell type formatted` = ifelse(grepl("Natural Killer Cells, donor", onto_value, ignore.case = T), "natural_killer", `Cell type formatted`)) %>%
-        mutate(`Cell type formatted` = ifelse(grepl("adipose, donor", onto_value, ignore.case = T), "adipose", `Cell type formatted`)) %>%
+        mutate(`Cell type formatted` = ifelse(grepl("adipose, donor", onto_value, ignore.case = T), "adipocyte", `Cell type formatted`)) %>%
 
         # filter only recognised cell types
         distinct(onto_link, `Cell type`, `Cell type formatted`)
@@ -241,7 +241,7 @@ get_bloodRNA = function(){
     mutate(`Cell type` = ifelse(grepl("_Monocytes_", file), "monocyte", `Cell type`)) %>%
     mutate(`Cell type` = ifelse(grepl("_Naive_Bcells_", file), "b_naive", `Cell type`)) %>%
     mutate(`Cell type` = ifelse(grepl("_Neutrophils_", file), "neutrophil", `Cell type`)) %>%
-    mutate(`Cell type` = ifelse(grepl("_Nkcells_", file), "nk", `Cell type`)) %>%
+    mutate(`Cell type` = ifelse(grepl("_Nkcells_", file), "natural_killer", `Cell type`)) %>%
     mutate(`Cell type` = ifelse(grepl("_CD8_Tcells_", file), "t_CD8", `Cell type`)) %>%
     mutate(`Cell type` = ifelse(grepl("_Mem_Bcell_", file), "b_memory", `Cell type`)) %>%
     filter(`Cell type` %>% is.na %>% `!`) %>%
