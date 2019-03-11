@@ -97,7 +97,8 @@ get_FANTOM5 = function(){
         mutate(`Cell type formatted` = ifelse(grepl("Monocyte-derived macrophages 0h", onto_value, ignore.case = T), "macrophage", `Cell type formatted`)) %>%
         mutate(`Cell type formatted` = ifelse(grepl("Monocyte-derived macrophages repsonse to LPS, 00hr00", onto_value, ignore.case = T), "macrophage", `Cell type formatted`)) %>%
         mutate(`Cell type formatted` = ifelse(grepl("Natural Killer Cells, donor", onto_value, ignore.case = T), "natural_killer", `Cell type formatted`)) %>%
-        mutate(`Cell type formatted` = ifelse(grepl("adipose, donor", onto_value, ignore.case = T), "adipose", `Cell type formatted`)) %>%
+        mutate(`Cell type formatted` = ifelse(grepl("adipose, donor", onto_value, ignore.case = T), "adipocyte", `Cell type formatted`)) %>%
+
 
         # filter only recognised cell types
         distinct(onto_link, `Cell type`, `Cell type formatted`)
@@ -241,7 +242,7 @@ get_bloodRNA = function(){
     mutate(`Cell type` = ifelse(grepl("_Monocytes_", file), "monocyte", `Cell type`)) %>%
     mutate(`Cell type` = ifelse(grepl("_Naive_Bcells_", file), "b_naive", `Cell type`)) %>%
     mutate(`Cell type` = ifelse(grepl("_Neutrophils_", file), "neutrophil", `Cell type`)) %>%
-    mutate(`Cell type` = ifelse(grepl("_Nkcells_", file), "nk", `Cell type`)) %>%
+    mutate(`Cell type` = ifelse(grepl("_Nkcells_", file), "natural_killer", `Cell type`)) %>%
     mutate(`Cell type` = ifelse(grepl("_CD8_Tcells_", file), "t_CD8", `Cell type`)) %>%
     mutate(`Cell type` = ifelse(grepl("_Mem_Bcell_", file), "b_memory", `Cell type`)) %>%
     filter(`Cell type` %>% is.na %>% `!`) %>%
@@ -250,6 +251,8 @@ get_bloodRNA = function(){
     mutate(sample = gsub("_C1B73ACXX.+", "", file)) %>%
     group_by(sample, ensembl_gene_id, `Cell type`) %>%
     summarise(`read count` = `read count` %>% median(na.rm=T)) %>%
+    ungroup() %>%
+
 
     # Cell type formatted
     mutate(`Cell type formatted` = `Cell type`) %>%
@@ -321,13 +324,13 @@ get_ENCODE = function(){
         ) %>%
           dplyr:::select(gene_id, expected_count) %>%
           mutate(sample = f)
-      } %>%
+      }) %>%
 
-        # Add symbol
-        spread(sample, expected_count) %>%
-        dplyr::rename(raw_geneID = gene_id) %>%
-        separate(raw_geneID, c("ENSEMBL_ID", "dummy"), sep = "\\." ) %>%
-        dplyr::select(-dummy) %>%
+    left_join(
+      (.) %>%
+        separate(gene_id, c("ENSEMBL_ID", "dummy"), sep = "\\." , remove = F) %>%
+        distinct(ENSEMBL_ID, gene_id) %>%
+
         mutate(
           symbol =
             AnnotationDbi::mapIds(
@@ -337,12 +340,10 @@ get_ENCODE = function(){
               keytype="ENSEMBL",
               multiVals="first"
             )
-        ) %>%
-        gather(sample, `read count`, -ENSEMBL_ID, -symbol)
+        )
     ) %>%
-
+    rename(`read count` = expected_count) %>%
     dplyr::select(sample, `Cell type`, `Cell type formatted`, `read count`, symbol, ENSEMBL_ID) %>%
-    distinct %>%
     mutate(`Data base` = "ENCODE")
 
 }
@@ -360,7 +361,10 @@ save(FANTOM5, file="big_data/tibble_cellType_files/FANTOM5.RData")
 bloodRNA = get_bloodRNA()
 save(bloodRNA, file="big_data/tibble_cellType_files/bloodRNA.RData")
 
-ENCODE %>% bind_rows(BLUEPRINT) %>% bind_rows(FANTOM5) %>% bind_rows(bloodRNA) %>%
+ENCODE %>%
+  bind_rows(BLUEPRINT) %>%
+  bind_rows(FANTOM5) %>%
+  bind_rows(bloodRNA) %>%
   filter(symbol %>% is.na %>% `!`) %>%
   filter(`Cell type formatted` %>% is.na %>% `!`) %>%
   mutate(`read count` = `read count` %>% as.integer) %>%

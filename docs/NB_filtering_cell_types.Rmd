@@ -1,0 +1,813 @@
+---
+title: "qq_plots_of_discrete_distributions_on_transcriptomic_data"
+author: "Mangiola Stefano"
+date: "31/01/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+# Import libraries
+setwd("~/PostDoc/RNAseq-noise-model/docs")
+
+#setwd("/wehisan/bioinf/bioinf-data/Papenfuss_lab/projects/mangiola.s/PostDoc/RNAseq-noise-model")
+set.seed(13254)
+
+# Import libraries
+library(tidyverse)
+library(magrittr)
+library(rstan)
+library(tidybayes)
+library(here)
+library(foreach)
+library(doParallel)
+registerDoParallel()
+# library(future)
+# plan(multiprocess)
+
+rstan_options(auto_write = TRUE)
+options(mc.cores = parallel::detectCores())
+
+#devtools::load_all() # Sorry this costs me 30 minutes every day
+
+my_theme = 	
+	theme_bw() +
+	theme(
+		panel.border = element_blank(),
+		axis.line = element_line(),
+		panel.grid.major = element_line(size = 0.2),
+		panel.grid.minor = element_line(size = 0.1),
+		text = element_text(size=12),
+		legend.position="bottom",
+		aspect.ratio=1,
+		axis.text.x = element_text(angle = 90, hjust = 1),
+		strip.background = element_blank(),
+		axis.title.x  = element_text(margin = margin(t = 10, r = 10, b = 10, l = 10)),
+		axis.title.y  = element_text(margin = margin(t = 10, r = 10, b = 10, l = 10))
+	)
+
+# Tools
+source("https://gist.githubusercontent.com/stemangiola/90a528038b8c52b21f9cfa6bb186d583/raw/dbd92c49fb03fb05ab0b465704b99c0a39e654d5/transcription_tool_kit.R")
+source("https://gist.githubusercontent.com/stemangiola/dd3573be22492fc03856cd2c53a755a9/raw/e4ec6a2348efc2f62b88f10b12e70f4c6273a10a/tidy_extensions.R")
+
+```
+
+
+# Cell types - t cells
+
+```{r load_data cell_type, cache=TRUE}
+
+counts = 
+	foreach(
+		f = dir(
+			path = 	here("big_data", "tibble_cellType_files"), 
+			pattern="cellTypes_t_",
+			full.names = T
+		),
+		.combine = bind_rows
+	) %dopar% {
+		read_csv(f) %>% 
+	    mutate_at(vars(one_of('sample')), as.character) %>%
+	    mutate_at(vars(one_of('isoform')), as.character) 
+	}  %>%
+
+  filter(symbol %>% is.na %>% `!`) %>%
+  
+	# Median redundant
+  do_parallel_start(40, "symbol") %>%
+  do({
+    	`%>%` = magrittr::`%>%`
+  		library(tidyverse)
+  		library(magrittr)
+    	
+    	(.) %>%
+  			group_by(sample, symbol, `Cell type formatted`,  `Data base`) %>%
+  			summarise(`read count` = `read count` %>% median(na.rm = T)) %>%
+  			ungroup() 
+  }) %>%
+  do_parallel_end() %>%
+
+  # Normalise
+	norm_RNAseq( 
+			sample_column = "sample", 
+			gene_column = "symbol", 
+			value_column = "read count",cpm_threshold = 0.5
+		) %>%
+  mutate(`read count normalised` = `read count normalised` %>% as.integer) %>%
+  mutate(`read count normalised log` = `read count normalised` %>% `+` (1) %>% log) %>%
+
+  # Mark the bimodal distributions
+  do_parallel_start(40, "symbol") %>%
+ 	do({
+		`%>%` = magrittr::`%>%`
+		library(tidyverse)
+		library(magrittr)
+
+		(.) %>%
+		  group_by(symbol) %>%
+		  do(
+		    (.) %>%
+		    mutate(
+  		  `bimodal p-value` =
+  		    (.) %>%
+    		  pull(`read count normalised log`) %>%
+    		  diptest::dip.test() %$%
+    		  `p.value`,
+  		  
+  		  `bimodal coefficient` = 
+  		     (.) %>%
+  		    pull(`read count normalised log`) %>%
+  		    modes::bimodality_coefficient(),
+  		  
+  		  `anova p-value` = 
+  		      ifelse(
+  		        (.) %>% distinct(`Data base`) %>% nrow > 1,
+  		        (.) %>% aov(`read count normalised log` ~ `Cell type formatted` + `Data base`, .) %>% anova %$% `Pr(>F)` %>% `[` (1),
+  		        (.) %>% aov(`read count normalised log` ~ `Cell type formatted`, .) %>% anova %$% `Pr(>F)` %>% `[` (1)
+  		      ) 
+		    )
+		  ) %>%
+		  ungroup()
+
+	}) %>%
+  do_parallel_end() %>% 
+  mutate(
+    `anova p-value` = ifelse(`anova p-value` == "NaN", 1, `anova p-value`),
+    `bimodal coefficient` = ifelse(`bimodal coefficient` == "NaN", 0, `bimodal coefficient`)
+  ) %>%
+  mutate(
+    `hard bimodality` =
+      (`bimodal p-value` < 0.05) + 
+      (`bimodal coefficient` > 0.6666667) + 
+      (`anova p-value` < 0.05 ) >= 2
+  ) %>%
+  mutate(`soft bimodality` = `anova p-value` < 0.0001) %>%
+  
+  mutate(symbol = symbol %>% as.factor) %>%
+  mutate(sample = sample %>% as.factor) 
+```
+
+Inference 
+
+```{r predict_values cell_type, cache=TRUE}
+n_genes = 5000
+
+n_genes = 5000
+
+set.seed(1325364)
+counts_stan = 
+  counts %>%
+  #filter(!filt_for_calc) %>%
+  filter(!`hard bimodality`) %>%
+  
+  # Make DF squared
+  # left_join( (.) %>% count(symbol) %>% mutate(n_approx = (n / 20) %>% floor) ) %>%
+  # filter(n == 58) %>%
+  #
+  
+  #filter(symbol%in%c("A2M-AS1", "A1BG")) %>%
+  inner_join( (.) %>% distinct(symbol) %>% sample_n(n_genes) ) %>%
+  
+  # Add sample idx
+  mutate(sample_idx = as.integer(sample)) 
+
+data_for_stan = counts_stan %>%
+  left_join(
+    (.) %>% 
+    distinct(sample, symbol) %>% 
+    arrange(symbol) %>%
+    count(symbol) %>% 
+    mutate(end = cumsum(n)) %>%
+    mutate(start = c(1, .$end %>% rev() %>% `[` (-1) %>% rev %>% `+` (1)))
+  ) %>% 
+  arrange(symbol) %>%
+  list(
+  N = (.) %>% nrow,
+  G = (.) %>% distinct(symbol) %>% nrow,
+  S = (.) %>% distinct(sample) %>% nrow,
+  symbol_start_end = (.) %>% distinct(start, end) %>% select(start, end),
+  symbols = (.) %>% distinct(symbol) %>% arrange(symbol),
+  counts = (.) %>% select(`read count`) %>% pull(1),
+  sample_idx = 
+    (.) %>%
+    pull(sample_idx),
+  # Info on data set
+  omit_data = 0,
+  generate_quantities = 1,
+  is_prior_asymetric = 1
+)
+
+fileConn<-file("~/.R/Makevars")
+writeLines(c("CXX14FLAGS += -O3"), fileConn)
+close(fileConn)
+nb_model = stan_model(here("stan",sprintf("%s.stan", "negBinomial_tidy")))
+# fit = 
+#   sampling(
+#       nb_model,
+#     data = data_for_stan,
+#     chains=2, iter=300, warmup=200
+# )
+
+# MPI
+
+shards = 56
+counts_stan_MPI =
+  counts_stan %>%
+  left_join(
+    (.) %>% 
+      distinct(symbol) %>%
+      mutate( idx_MPI = head( rep(1:shards, (.) %>% nrow %>% `/` (shards) %>% ceiling ), n=(.) %>% nrow) )
+  ) %>%
+  arrange(idx_MPI, symbol) %>%
+  
+  # Decide start - end location
+  group_by(idx_MPI) %>%
+  do(
+    (.) %>%
+    left_join(
+      (.) %>% 
+      distinct(idx_MPI, sample, symbol) %>% 
+      arrange(idx_MPI, symbol) %>%
+      count(idx_MPI, symbol) %>% 
+      mutate(end = cumsum(n)) %>%
+      mutate(start = c(1, .$end %>% rev() %>% `[` (-1) %>% rev %>% `+` (1)))
+    ) 
+  ) %>%
+  ungroup()
+
+data_for_stan_MPI = list(
+  
+  N = counts_stan_MPI %>% distinct(sample, symbol, idx_MPI) %>% count(idx_MPI) %>% pull(n) %>% max,
+  M = counts_stan_MPI %>% distinct(start, idx_MPI) %>% count(idx_MPI) %>% pull(n) %>% max,
+  G = counts_stan_MPI %>% distinct(symbol) %>% nrow(),
+  S = counts_stan_MPI %>% distinct(sample) %>% nrow(),
+  D = 1, #counts_stan_MPI %>% distinct(`Data base`) %>% nrow(),
+  G_per_shard = counts_stan_MPI %>% distinct(symbol, idx_MPI) %>% count(idx_MPI) %>% pull(n) %>% as.array,
+  n_shards = min(shards, counts_stan_MPI %>% distinct(idx_MPI) %>% nrow),
+  G_per_shard_idx = c(0, counts_stan_MPI %>% distinct(symbol, idx_MPI) %>% count(idx_MPI) %>% pull(n) %>% cumsum),
+  
+  
+  counts = 
+    foreach(idx = counts_stan_MPI %>% distinct(idx_MPI) %>% pull(idx_MPI), .combine = full_join) %do% {
+      counts_stan_MPI %>%
+      filter(idx_MPI == idx) %>%
+      select(`read count`) %>% 
+      setNames(idx) %>%
+      mutate(i = 1:n())
+    } %>%
+    select(-i) %>%
+    replace(is.na(.), 0) %>%
+    mutate_if(is.numeric, as.integer) %>%
+    as_matrix() %>% t,
+  
+  symbol_end =   
+    foreach(idx = counts_stan_MPI %>% distinct(idx_MPI) %>% pull(idx_MPI), .combine = full_join) %do% {
+      counts_stan_MPI %>%
+      filter(idx_MPI == idx) %>%
+      distinct(end) %>% 
+      rbind(0, .) %>%
+      #mutate(start = start - ( (.) %>% head(n=1) %>% pull(start)) + 1) %>%
+      setNames(idx) %>%
+      mutate(i = 1:n())
+    } %>%
+    select(-i) %>%
+    replace(is.na(.), 0) %>%
+    mutate_if(is.numeric, as.integer) %>%
+    as_matrix() %>% t,
+  
+  symbols = 
+    foreach(idx = counts_stan_MPI %>% distinct(idx_MPI) %>% pull(idx_MPI), .combine = full_join) %do% {
+      counts_stan_MPI %>%
+      filter(idx_MPI == idx) %>%
+      distinct(symbol) %>% 
+      mutate(symbol = as.character(symbol)) %>%
+      setNames(idx) %>%
+      mutate(i = 1:n())
+    } %>%
+    select(-i),
+  
+  sample_idx =  
+    foreach(idx = counts_stan_MPI %>% distinct(idx_MPI) %>% pull(idx_MPI), .combine = full_join) %do% {
+      counts_stan_MPI %>%
+      filter(idx_MPI == idx) %>%
+      select(sample_idx) %>% 
+      setNames(idx) %>%
+      mutate(i = 1:n())
+    } %>%
+    select(-i) %>%
+    replace(is.na(.), 0) %>%
+    mutate_if(is.numeric, as.integer) %>%
+    as_matrix() %>% t
+)
+
+fileConn<-file("~/.R/Makevars")
+writeLines(c("CXX14FLAGS += -O3","CXX14FLAGS += -DSTAN_THREADS", "CXX14FLAGS += -pthread"), fileConn)
+close(fileConn)
+Sys.setenv("STAN_NUM_THREADS" = 14)
+nb_model_MPI = stan_model(here("stan",sprintf("%s.stan", "negBinomial_tidy_MPI")))
+Sys.time()
+fit_MPI = 
+  sampling(
+      nb_model_MPI,
+    data = data_for_stan_MPI,
+    chains=3, iter=300, warmup=200
+)
+save(fit_MPI, file="fit_MPI_05032019.RData")
+Sys.time()
+
+#fit_parsed = fit_MPI %>% spread_draws(lambda[G], sigma[G], sigma_raw[G], sigma_raw_gen[G], lambda_gen[G])
+
+fit_parsed = fit_MPI %>% summary() %$% summary %>% as_tibble(rownames="par") %>% filter(grepl("lambda|sigma", par)) %>% separate(par, c("par", "G"), sep="\\[|\\]") %>% select(par, G, "50%") %>% spread(par, "50%") %>% mutate(G = G %>% as.integer)
+
+
+
+fit_parsed %>%
+  mean_qi() %>%
+  left_join(data_for_stan$symbols %>% mutate(G=1:n()) ) %>% left_join(
+    fit_MPI_parsed %>%
+    mean_qi() %>%
+    left_join(data_for_stan_MPI$symbols %>% gather(idx_MPI, symbol) %>%
+                drop_na() %>%
+                arrange(idx_MPI, symbol) %>% mutate(G=1:n()) ) ,
+    by = c("symbol")
+  ) %>%
+{ggplot((.),  aes(x = lambda.x, y = lambda.y , label=symbol , idx_MPI=idx_MPI, color=symbol=="AKR1C3")  ) + geom_point()} %>% plotly::ggplotly()
+
+
+    fit_parsed %>%
+    mean_qi() %>%
+    left_join(data_for_stan_MPI$symbols %>% gather(idx_MPI, symbol) %>%
+                drop_na() %>%
+                mutate(G=1:n()) )  %>%
+      left_join(counts_stan_MPI %>% select(symbol, `read count normalised`) %>% group_by(symbol) %>% summarise(`read count normalised` = `read count normalised` %>% `+` (1) %>% log %>% mean)) %>%
+{ggplot((.),  aes(x = lambda, y = `read count normalised` , label=symbol , idx_MPI=idx_MPI, color=symbol=="AKR1C3")  ) + geom_point()} %>% plotly::ggplotly()
+
+
+```
+
+
+```{r}
+fit_parsed %>% 
+    #median_qi() %>% 
+    
+    left_join(
+      rstan::extract(fit_MPI, "sigma_raw_gen") %>% as.data.frame %>% as_tibble() %>% head(n=1) %>% gather(G, gen_quant) %>% mutate(G=1:n())
+    ) %>%
+    
+    left_join(
+      data_for_stan_MPI$symbols %>% 
+        gather(idx_MPI, symbol) %>%
+      drop_na() %>%
+      arrange(idx_MPI, symbol) %>% mutate(G=1:n()) 
+    ) %>%
+    gather(is_real, my_sigma,  c("sigma_raw", "gen_quant")) %>%
+    ggplot(aes(x=lambda, y=my_sigma, lable=symbol, color=is_real)) + 
+    geom_point(alpha=0.5) +
+    stat_function(
+        fun = function(x) {
+            slope =  fit_MPI %>% rstan::extract(pars="sigma_slope") %>% as.data.frame %>% as_tibble %>% pull(1) %>% median
+            intercept = fit_MPI %>% rstan::extract(pars="sigma_intercept") %$% sigma_intercept %>% median()
+            (slope * x + intercept) ;
+        },
+        geom="line"
+    ) +
+  # geom_abline(slope = -0.35, intercept = 0.50) +
+  #stat_smooth( method="lm", formula= (y ~ exp(x)) ) +
+  scale_y_continuous(trans="log") + my_theme
+		
+fit_parsed %>% 
+  #median_qi() %>%   
+  left_join(
+      rstan::extract(fit_MPI, "lambda_gen") %>% as.data.frame %>% as_tibble() %>% head(n=1) %>% gather(G, gen_quant) %>% mutate(G=1:n())
+    ) %>%  
+  gather(is_real, my_lambda,  c("lambda", "gen_quant")) %>%
+  ggplot(aes(my_lambda, color=is_real)) +
+  geom_freqpoly() + my_theme
+
+
+fit_predicted = 
+  fit_parsed %>% 
+  #mean_qi() %>%
+  left_join(
+    data_for_stan_MPI$symbols %>% 
+      gather(idx_MPI, symbol) %>%
+      drop_na() %>%
+      mutate(G=1:n()) 
+  ) %>%
+  left_join(
+    counts_stan %>% select(symbol, sample, `read count normalised`, `read count`)
+  ) %>% 
+  do_parallel_start(40, "symbol") %>%
+ 	do({
+ 	  
+ 	  `%>%` = magrittr::`%>%`
+		library(tidyverse)
+		library(magrittr)
+ 	  
+ 	  (.) %>%
+    group_by(symbol) %>%
+    do(
+      (.) %>%
+      arrange(`read count normalised`) %>%
+      mutate(
+      	predicted_NB = 
+      		qnbinom(
+        		ppoints(`read count normalised`), 
+        		size=.$sigma %>% unique, 
+        		mu=.$lambda %>% unique %>% exp
+        		)
+      ) 
+    ) %>%
+    ungroup() 
+ 	}) %>%
+  do_parallel_end() %>%
+  mutate(`log of error` = (`read count normalised` - predicted_NB) %>% abs %>% `+` (1) %>% log) %>%
+  mutate(`error of log` = (log(`read count normalised` + 1) - log(predicted_NB + 1)) %>% abs ) %>%
+  mutate(`error scaled` =  ((`read count normalised` - predicted_NB) / (`read count normalised` + 1) ) %>%  abs) %>%
+  left_join(
+    (.) %>%
+    group_by(symbol) %>% 
+    summarise(`gene error mean` = `error of log` %>% mean)
+  )
+
+fit_predicted %>% 
+select(sample, symbol, `read count`, `read count normalised`, `gene error mean`) %>%
+write_csv("t_cells_with_error_qq_plot_means.csv")
+
+```
+
+Plot worst predictions
+
+```{r}
+fit_predicted %>%
+  inner_join( 
+    (.) %>%
+      filter(lambda > log(100)) %>% 
+      group_by(symbol) %>% 
+      summarise(`error mean` = `error of log` %>% mean) %>% 
+      arrange(`error mean` %>% desc) %>% 
+      select(symbol) %>% 
+      head(20)
+  ) %>%
+  ggplot(aes(y = `read count normalised` + 1, x = predicted_NB + 1)) + 
+  geom_point() + 
+  facet_wrap(~ symbol, scale="free") + 
+  geom_abline(slope = 1, intercept=0) + scale_y_log10() + scale_x_log10() + my_theme
+
+```
+
+Plot errors in rank
+
+```{r}
+fit_predicted %>%
+    group_by(symbol, lambda) %>% 
+    summarise(`error mean` = `error scaled` %>% mean) %>%
+    ungroup() %>%
+    mutate(symbol = factor(symbol, levels= (.) %>% arrange(`error mean` %>% desc) %>% pull(symbol))) %>%
+    ggplot(aes(x=symbol, y=`error mean`, color = lambda)) + geom_point()
+```
+
+Plot single gene
+
+```{r}
+
+counts %>% filter(symbol == "HCG23") %>% 
+{
+  ((.) %>% ggplot(aes(x=sample, y = `read count normalised`+1, color=`Cell type formatted`, shape = `Data base`)) + geom_point() + scale_y_log10()) %>% print()
+  (.)
+} %>%
+pull(`read count normalised`) %>%
+`+` (1) %>%
+log %>% 
+  { (.) %>% modes::bimodality_coefficient() %>% print; (.)} %>%
+  diptest::dip.test() %$% `p.value`
+
+```
+
+
+# TCGA - leukemia
+
+```{r, cache=TRUE}
+
+counts_source = "Acute_Myeloid_Leukemia_Primary_Blood_Derived_Cancer_-_Peripheral_Blood"
+counts_TCGA = 
+	
+	read_csv(here("big_data", "tibble_TCGA_files", paste0(counts_source, ".csv"))) %>%
+  	# Median redundant
+  do_parallel_start(40, "ens_iso") %>%
+  do({
+    	`%>%` = magrittr::`%>%`
+  		library(tidyverse)
+  		library(magrittr)
+    	
+    	(.) %>%
+  			group_by(sample, ens_iso) %>%
+  			summarise(`read count` = `read count` %>% median(na.rm = T)) %>%
+  			ungroup() 
+  }) %>%
+  do_parallel_end() %>%
+
+  # Normalise
+	norm_RNAseq( 
+			sample_column = "sample", 
+			gene_column = "ens_iso", 
+			value_column = "read count",cpm_threshold = 10, prop = 9/10
+		) %>%
+  mutate(`read count normalised` = `read count normalised` %>% as.integer) %>%
+  mutate(`read count normalised log` = `read count normalised` %>% `+` (1) %>% log) 
+
+
+```
+
+```{r predict_values cell_type TCGA, cache=TRUE}
+
+# non MPI
+
+set.seed(1325364)
+num_genes = 100
+
+counts_stan = 
+  counts_TCGA %>%
+  #filter(!filt_for_calc)  %>%
+  inner_join( (.) %>% distinct(ens_iso) %>% sample_n(num_genes) ) %>%
+  
+  left_join(
+    (.) %>% 
+    distinct(sample, ens_iso, `read count normalised`) %>% 
+    count(ens_iso) %>% 
+    mutate(end = cumsum(n)) %>%
+    mutate(start = c(1, .$end %>% rev() %>% `[` (-1) %>% rev %>% `+` (1)))
+  ) %>% 
+  arrange(ens_iso) %>%
+  
+  # Add sample idx
+  mutate(sample_idx = as.integer(as.factor(sample)))
+
+
+data_for_stan = list(
+  N = counts_stan %>% nrow,
+  G = counts_stan %>% distinct(ens_iso) %>% nrow,
+  S = counts_stan %>% distinct(sample) %>% nrow,
+  symbol_start_end = counts_stan %>% distinct(start, end) %>% select(start, end),
+  counts = counts_stan %>% select(`read count normalised`) %>% pull(1),
+  sample_idx = 
+    counts_stan %>%
+    mutate(sample = factor(sample)) %>% 
+    mutate(sample_idx = as.integer(sample)) %>% 
+    select(sample_idx) %>%
+    pull(1),
+
+  # Info on data set
+  omit_data = 0,
+  generate_quantities = 1,
+  is_prior_asymetric = 1
+)
+
+fileConn<-file("~/.R/Makevars")
+writeLines(c("CXX14FLAGS += -O3"), fileConn)
+close(fileConn)
+nb_model = stan_model(here("stan",sprintf("%s.stan", "negBinomial_tidy")))
+
+system.time(
+  sampling(
+      nb_model,
+    data = data_for_stan,
+    chains=1, iter=500
+))
+fit_parsed = fit %>% spread_draws(lambda[G], sigma[G], sigma_raw[G], sigma_raw_gen[G])
+fit %>% summary() %$% summary %>% as_tibble(rownames="par")
+####
+
+# MPI
+shards = 10
+counts_stan_MPI =
+  counts_stan %>%
+  
+  # Add index for MPI
+  left_join(
+    (.) %>% 
+      distinct(ens_iso) %>%
+      mutate( idx_MPI = head( rep(1:shards, (.) %>% nrow %>% `/` (shards) %>% ceiling ) %>% sort, n=(.) %>% nrow) )
+  ) 
+
+data_for_stan_MPI = list(
+  
+  N = counts_stan_MPI %>% distinct(sample, ens_iso, idx_MPI) %>% count(idx_MPI) %>% pull(n) %>% max,
+  M = counts_stan_MPI %>% distinct(start, idx_MPI) %>% count(idx_MPI) %>% pull(n) %>% max,
+  G = counts_stan_MPI %>% distinct(ens_iso) %>% nrow(),
+  S = counts_stan_MPI %>% distinct(sample) %>% nrow(),
+  n_shards = shards,
+  G_per_shard = counts_stan_MPI %>% distinct(ens_iso, idx_MPI) %>% count(idx_MPI) %>% pull(n) %>% as.array,
+  G_per_shard_idx = c(0, counts_stan_MPI %>% distinct(ens_iso, idx_MPI) %>% count(idx_MPI) %>% pull(n) %>% cumsum),
+  
+  counts = foreach(idx = counts_stan_MPI %>% distinct(idx_MPI) %>% pull(idx_MPI), .combine = full_join) %do% {
+    counts_stan_MPI %>%
+    filter(idx_MPI == idx) %>%
+    select(`read count`) %>% 
+    setNames(idx) %>%
+    mutate(i = 1:n())
+  } %>%
+  select(-i) %>%
+    replace(is.na(.), 0) %>%
+    mutate_if(is.numeric, as.integer) %>%
+    as_matrix() %>% t,
+  
+  symbol_start =   foreach(idx = counts_stan_MPI %>% distinct(idx_MPI) %>% pull(idx_MPI), .combine = full_join) %do% {
+    counts_stan_MPI %>%
+    filter(idx_MPI == idx) %>%
+    distinct(start) %>% 
+    rbind(  counts_stan_MPI %>% filter(idx_MPI == idx) %>% pull(end) %>% max) %>%
+    mutate(start = start - ( (.) %>% head(n=1) %>% pull(start)) + 1) %>%
+    setNames(idx) %>%
+    mutate(i = 1:n())
+  } %>%
+  select(-i) %>%
+    replace(is.na(.), 0) %>%
+    mutate_if(is.numeric, as.integer) %>%
+    as_matrix() %>% t,
+  
+  sample_idx =  foreach(idx = counts_stan_MPI %>% distinct(idx_MPI) %>% pull(idx_MPI), .combine = full_join) %do% {
+    counts_stan_MPI %>%
+    filter(idx_MPI == idx) %>%
+    select(sample_idx) %>% 
+    setNames(idx) %>%
+    mutate(i = 1:n())
+  } %>%
+  select(-i) %>%
+  replace(is.na(.), 0) %>%
+    mutate_if(is.numeric, as.integer) %>%
+    as_matrix() %>% t
+
+)
+
+fileConn<-file("~/.R/Makevars")
+writeLines(c("CXX14FLAGS += -O3","CXX14FLAGS += -DSTAN_THREADS", "CXX14FLAGS += -pthread"), fileConn)
+close(fileConn)
+Sys.setenv("STAN_NUM_THREADS" = 11)
+nb_model_MPI = stan_model(here("stan",sprintf("%s.stan", "negBinomial_tidy_MPI")))
+system.time(
+  sampling(
+      nb_model_MPI,
+    data = data_for_stan_MPI,
+    chains=1, iter=500
+))
+
+###
+
+# MPI2
+
+fileConn<-file("~/.R/Makevars")
+writeLines(c("CXX14FLAGS += -O3","CXX14FLAGS += -DSTAN_THREADS", "CXX14FLAGS += -pthread"), fileConn)
+close(fileConn)
+Sys.setenv("STAN_NUM_THREADS" = 11)
+nb_model_MPI2 = stan_model(here("stan",sprintf("%s.stan", "negBinomial_tidy_MPI2")))
+
+counts_stan = 
+  counts_TCGA %>%
+  #filter(!filt_for_calc)  %>%
+  select(ens_iso, sample, `read count`) %>%
+  spread(sample, `read count`) %>%
+  filter(!grepl("^__", ens_iso)) %>%
+  drop_na() %>%
+  sample_n(num_genes)
+
+data_for_stan = list(
+  G = counts_stan %>% nrow,
+  S = counts_stan %>% ncol %>% `-` (1),
+  counts = counts_stan %>% select(-ens_iso)
+)
+
+system.time(
+  sampling(
+      nb_model_MPI2,
+    data = data_for_stan,
+    chains=1, iter=500
+))
+
+###########
+
+load("fit_parsed_500_genes_TCGA_leukimia_18022019.RData")
+
+
+fit_parsed %>% 
+  mean_qi() %>% 
+  
+  left_join(
+    fit_parsed %>% group_by(G) %>% do( (.) %>% head(n=1) ) %>% ungroup() %>% select(G, sigma_raw_gen) %>% rename(gen_quant = sigma_raw_gen)
+  ) %>%
+  
+  left_join(
+    counts_stan %>% distinct(ens_iso) %>% mutate(G=1:n())
+  ) %>%
+  gather(is_real, my_sigma,  c("sigma_raw", "gen_quant")) %>%
+  ggplot(aes(x=lambda, y=my_sigma, lable=ens_iso, color=is_real)) + geom_point() +
+	stat_function(
+		fun = function(x) {
+		  slope =  fit %>% rstan::extract(pars="sigma_slope") %>% as.data.frame %>% as_tibble %>% pull(1) %>% median
+		  intercept = fit %>% rstan::extract(pars="sigma_intercept") %$% sigma_intercept %>% median()
+			exp(slope * x + intercept) ;
+		}, 
+		geom="line"
+	)
+		
+fit_predicted = fit_parsed %>% 
+  mean_qi() %>%
+  left_join(
+    counts_stan %>% distinct(ens_iso) %>% mutate(G=1:n())
+  ) %>%
+  left_join(
+    counts_stan %>% select(ens_iso, `read count normalised`)
+  ) %>% 
+  do_parallel_start(40, "ens_iso") %>%
+ 	do({
+ 	  
+ 	  `%>%` = magrittr::`%>%`
+		library(tidyverse)
+		library(magrittr)
+ 	  
+ 	  (.) %>%
+    group_by(ens_iso) %>%
+    do(
+      (.) %>%
+      arrange(`read count normalised`) %>%
+      mutate(
+      	predicted_NB = 
+      		qnbinom(
+        		ppoints(`read count normalised`), 
+        		size=.$sigma %>% unique, 
+        		mu=.$lambda %>% unique %>% exp
+        		)
+      ) 
+    ) %>%
+    ungroup() 
+ 	}) %>%
+  do_parallel_end() %>%
+  mutate(`log of error` = (`read count normalised` - predicted_NB) %>% abs %>% `+` (1) %>% log) %>%
+  mutate(`error of log` = (log(`read count normalised` + 1) - log(predicted_NB + 1)) %>% abs )
+
+```
+
+```{r}
+
+# Test for near 0 genes
+
+y = fit_parsed %>% 
+    mean_qi() %>% 
+    left_join(
+        counts_stan %>% 
+          distinct(ens_iso, filt_for_calc) %>% 
+          mutate(G=1:n())
+    ) %>% 
+  filter(!filt_for_calc) %>% pull(lambda)
+
+fit_0s = stan(
+  data = list(y = y, N = y %>% length),
+  model_code = "
+    data{
+    int N;
+    vector[N] y;
+    }
+    parameters{
+    real mu;
+    real<lower=0> sigma;
+    real skew;
+    }
+    model{
+     y ~ skew_normal(mu, sigma, skew);
+    }
+  " 
+)
+
+```
+
+Plot worst predictions
+
+```{r}
+fit_predicted %>%
+  inner_join( 
+    (.) %>%
+      filter(lambda > log(100)) %>% 
+      group_by(ens_iso) %>% 
+      summarise(`error mean` = `error of log` %>% mean) %>% 
+      arrange(`error mean` %>% desc) %>% 
+      select(ens_iso) %>% 
+      head(20)
+  ) %>%
+  ggplot(aes(y = `read count normalised` + 1, x = predicted_NB + 1)) + 
+  geom_point() + 
+  facet_wrap(~ ens_iso, scale="free") + 
+  geom_abline(slope = 1, intercept=0) + scale_y_log10() + scale_x_log10() + my_theme
+
+```
+
+Plot errors in rank
+
+```{r}
+fit_predicted %>%
+    group_by(ens_iso, lambda) %>% 
+    summarise(`error mean` = `error of log` %>% mean) %>%
+    ungroup() %>%
+    mutate(ens_iso = factor(ens_iso, levels= (.) %>% arrange(`error mean` %>% desc) %>% pull(ens_iso))) %>%
+    ggplot(aes(x=ens_iso, y=`error mean`, color = lambda)) + geom_point()
+```
+
+
