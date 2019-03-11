@@ -176,8 +176,6 @@ poisson_inverse_gaussian_lpmf = function( y,  log_mu,  tau){
 
 }
 
-
-
 approximated_modified_bessel_second_kind_log = function(z, v, s = max(0,v-10)){
 
   0.5 * ( log(pi) - log(2) ) + (-z - 0.5 * log(z)) +
@@ -485,3 +483,19 @@ my_dSICHEL = function (x, mu = 1, sigma = 1, nu = -0.5, log = FALSE)
 }
 
 my_dSICHEL(700, 100, 0.1, -30)
+
+besselK(0.1, 100) %>% log
+besselK(10, 100) %>% log
+besselK(30, 100) %>% log
+besselK(30, 1000) %>% log
+
+SICHEL_model =
+  stan_model(
+    here("stan",sprintf("%s.stan", "poisson_GIG")),
+    allow_undefined = TRUE,
+    includes = paste0('\n#include "',here::here("dev","besselk.hpp"),'"\n')
+  )
+sampling(
+  SICHEL_model,
+  chains=1, iter=1
+)
