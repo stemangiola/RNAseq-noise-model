@@ -250,6 +250,7 @@ get_bloodRNA = function(){
     mutate(sample = gsub("_C1B73ACXX.+", "", file)) %>%
     group_by(sample, ensembl_gene_id, `Cell type`) %>%
     summarise(`read count` = `read count` %>% median(na.rm=T)) %>%
+    ungroup() %>%
 
     # Cell type formatted
     mutate(`Cell type formatted` = `Cell type`) %>%
