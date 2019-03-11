@@ -99,6 +99,7 @@ get_FANTOM5 = function(){
         mutate(`Cell type formatted` = ifelse(grepl("Natural Killer Cells, donor", onto_value, ignore.case = T), "natural_killer", `Cell type formatted`)) %>%
         mutate(`Cell type formatted` = ifelse(grepl("adipose, donor", onto_value, ignore.case = T), "adipocyte", `Cell type formatted`)) %>%
 
+
         # filter only recognised cell types
         distinct(onto_link, `Cell type`, `Cell type formatted`)
 
@@ -252,6 +253,7 @@ get_bloodRNA = function(){
     summarise(`read count` = `read count` %>% median(na.rm=T)) %>%
     ungroup() %>%
 
+
     # Cell type formatted
     mutate(`Cell type formatted` = `Cell type`) %>%
 
@@ -328,6 +330,7 @@ get_ENCODE = function(){
       (.) %>%
         separate(gene_id, c("ENSEMBL_ID", "dummy"), sep = "\\." , remove = F) %>%
         distinct(ENSEMBL_ID, gene_id) %>%
+
         mutate(
           symbol =
             AnnotationDbi::mapIds(

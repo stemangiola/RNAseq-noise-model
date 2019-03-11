@@ -33,7 +33,7 @@ Setting global variables
 ```{r}
 
 N = 20
-G = 100
+G = 30
 counts_source = "Acute_Myeloid_Leukemia_Primary_Blood_Derived_Cancer_-_Peripheral_Blood"
 
 # Evaluate whether to recompute input data frame
@@ -75,6 +75,165 @@ if(recompute_counts_tidy) {
   counts_data = list(N = N, G = G, counts_tidy = counts_tidy)
   saveRDS(counts_data, file = temp_file_counts)
 }
+
+# Produce input for Stan
+```
+
+Select skewed genes
+
+```{r}
+
+
+ tbl =    
+  read_csv(here("big_data", "tibble_TCGA_files", paste0(counts_source, ".csv"))) %>%
+  mutate_if(is.character, as.factor) %>%
+  group_by(ens_iso) %>%
+  do(
+    (.) %>%
+      mutate(
+        pvalue_normal = ifelse(
+          (.) %>% distinct(`read count`) %>% nrow > 1,
+          (.) %>% 
+          pull(`read count`) %>% 
+          `+` (1) %>% 
+          log %>% 
+          shapiro.test %$% 
+          p.value ,
+          NA
+        )
+      ) 
+  ) %>% 
+  ungroup()
+
+ tbl %>%
+   right_join(
+     (.) %>% group_by(ens_iso) %>% summarise(m = `read count` %>% median) %>% arrange(m %>% desc) %>% head(n = 30000)
+   ) %>%
+   right_join(
+     (.) %>% ungroup %>% distinct(ens_iso, pvalue_normal) %>% arrange(pvalue_normal %>% desc) %>% head(n=10) %>% dplyr::select(ens_iso)
+   ) %>%
+   ggplot(aes(x=ens_iso, y=`read count`)) + geom_boxplot() + scale_y_log10() + my_theme
+ 
+ 
+read_csv(here("big_data", "tibble_TCGA_files", paste0(counts_source, ".csv"))) %>%
+  
+  # Take the highest expressed
+  mutate_if(is.character, as.factor) %>%
+    right_join(
+     (.) %>% group_by(ens_iso) %>% summarise(m = `read count` %>% median) %>% arrange(m %>% desc) %>% head(n = 10000)
+   ) %>%
+  
+  # Take the ones with bigger ratio sd / median
+   right_join(
+     (.) %>%
+       group_by(ens_iso) %>%
+    summarise(
+      med = `read count` %>% `+` (1) %>% median, 
+      sd = `read count` %>% `+` (1) %>% sd
+    ) %>%
+     mutate(ratio = log(sd)/log(med+1)) %>%
+     arrange(ratio %>% desc) %>%
+     head(n=20)
+   ) %>%
+  
+  # Infer NB
+   #group_by(ens_iso) %>%
+  multidplyr::partition(ens_iso) %>%
+   do({
+ 
+     `%>%` = magrittr::`%>%`
+		library(tidyverse)
+		library(magrittr)
+     # lines(seq(0,1000, 10) , sapply(seq(0,1000, 10)  , gamlss.dist::dSICHEL,mu= 100, sigma=0.05, nu=-0.3, log=T))
+     
+    fit_NB =  (.) %>%
+       arrange(`read count`) %>%
+       pull(`read count`) %>%
+      MASS::fitdistr("Negative Binomial")
+    
+    fit_SH =  (.) %>%
+       arrange(`read count`) %>%
+       pull(`read count`) %>%
+      MASS::fitdistr(gamlss.dist::dSICHEL, list(mu= 100, sigma=0.1, nu=-5), upper = c(4000, 20, 0),  lower=c(0, 0.0001, -10))
+
+    
+    (.) %>%
+       arrange(`read count`) %>%
+      mutate(predicted_NB = qnbinom(ppoints(`read count`), size=(fit_NB[1] %$% estimate)[1], mu=(fit_NB[1] %$% estimate)[2])) %>%
+      mutate(predicted_SH = gamlss.dist::qSICHEL(ppoints(`read count`), nu = (fit_SH[1] %$% estimate)[3], sigma=(fit_SH[1] %$% estimate)[2], mu=(fit_SH[1] %$% estimate)[1], max.value = max(`read count`))) %>%
+      mutate(
+        SH_mu = (fit_SH[1] %$% estimate)[1], 
+        SH_sigma = (fit_SH[1] %$% estimate)[2],
+        SH_nu = (fit_SH[1] %$% estimate)[3]
+        )
+      
+ }   ) %>%
+     collect() %>%
+	ungroup() %>%
+  
+  # Plot
+ {
+   
+   browser()
+
+  (.) %>%
+     gather(model, predicted, c("predicted_NB", "predicted_SH")) %>%
+     ggplot(aes(x=`predicted` + 1, y=`read count` + 1, label=ens_iso, color=model)) + 
+      geom_abline(intercept = 0, slope = 1, color="grey") + 
+      geom_line() + 
+     facet_wrap(~ ens_iso, scales = "free")  + my_theme +
+     expand_limits(y=1, x=1) + scale_y_log10() + scale_x_log10() 
+   
+   (.) %>% 
+     ggplot(aes(x= ens_iso,y=`read count` + 1, fill=ens_iso)) +
+     geom_boxplot(outlier.size = 0, lwd=0.2, position = position_dodge(width=0.8)) +
+     geom_point(position=position_jitterdodge(dodge.width=0.8), size = 0.2, shape = 21 ) + 
+     scale_y_log10() + my_theme
+   
+   (.)
+}
+   
+ 
+  
+  
+  xxx %>% {
+     (.) %>% ggplot(aes(x=average, y=sd^2, label=ens_iso)) + geom_point() + scale_y_log10() + scale_x_log10() + my_theme
+  } %>%
+   plotly::ggplotly()
+ 
+  xxx %>% filter(grepl("169429|196557", ens_iso )) %>% ggplot(aes(x= ens_iso,y=`read count`, fill=ens_iso)) +
+   	geom_boxplot(outlier.size = 0, lwd=0.2, position = position_dodge(width=0.8)) +
+   geom_point(position=position_jitterdodge(dodge.width=0.8), size = 0.2, shape = 21 ) + scale_y_log10()
+   
+  library(MASS)
+  data = xxx %>% filter(grepl("169429", ens_iso )) %>% pull(`read count`)
+ params = fitdistr(data, "Negative Binomial")
+
+   data.s = sort(data)
+
+data.q <- qnbinom(ppoints(data), size=(params[1] %$% estimate)[1], mu=(params[1] %$% estimate)[2])
+
+plot(data.q, data.s, col="red", xlab="Negative Binomial theoretical quantiles", ylab="Data quantiles")
+ 
+# plot the reference line
+abline(0,1)
+ 
+  d_adj %>%
+   group_by(symbol) %>%
+  summarise(
+    average = `value normalised` %>% `+` (1) %>% median, 
+    sd = `value normalised` %>% `+` (1) %>% sd
+  ) %>%
+  {
+     (.) %>% ggplot(aes(x=average, y=sd^2, label=symbol)) + geom_point() + scale_y_log10() + scale_x_log10() + my_theme
+  } %>%
+   plotly::ggplotly()
+ 
+ d_adj %>% filter(grepl("CYP1A1|IGHG1|IGKV1-39|ATF3", symbol )) %>% ggplot(aes(x= symbol,y=`value normalised`, fill=symbol)) +
+   	geom_boxplot(outlier.size = 0, lwd=0.2, position = position_dodge(width=0.8)) +
+   geom_point(position=position_jitterdodge(dodge.width=0.8), size = 0.2, shape = 21 ) + scale_y_log10()
+ 
+
 ```
 
 Wrappers and utilities
@@ -221,12 +380,26 @@ fits =
   }
 
 # Fit a single model
-fits$`logNormal_multinomial_asymmetric-1` =
+fits$`PIG` =
   sampling_check_return(
-     stan_model(here("stan",sprintf("%s.stan", "logNormal_multinomial"))),
-    data = data_for_stan %>% lplyr::mutate(is_prior_asymetric = 1),
-    control = list( max_treedepth = 12)
+     stan_model(here("stan",sprintf("%s.stan", "poisson_inverseGaussian"))),
+    data = data_for_stan %>% lplyr::mutate(is_prior_asymetric = 1) %>%  lplyr::mutate(omit_data = 1),
+    control = list( max_treedepth = 10), chains=1
 )
+```
+
+
+Test poisson-GIG
+
+```{r}
+
+fit.PGIG =
+  sampling_check_return(
+     stan_model(here("stan",sprintf("%s.stan", "poisson_inverseGaussian"))),
+    data = data_for_stan %>% lplyr::mutate(is_prior_asymetric = 1),
+    control = list( max_treedepth = 10)
+)
+
 ```
 
 Show speed of the models
@@ -234,6 +407,7 @@ Show speed of the models
 ```{r}
 fits %>% map_dbl(function(x) { sum(get_elapsed_time(x))})
 ```
+
 
 
 Get generated quantities
