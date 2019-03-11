@@ -53,32 +53,91 @@ source("https://gist.githubusercontent.com/stemangiola/90a528038b8c52b21f9cfa6bb
 
 ```{r load_data, cache=TRUE}
 
-counts_source = "Acute_Myeloid_Leukemia_Primary_Blood_Derived_Cancer_-_Peripheral_Blood"
 counts = 
-	
-	read_csv(here("big_data", "tibble_TCGA_files", paste0(counts_source, ".csv"))) %>%
+	foreach(
+		f = dir(
+			path = 	here("big_data", "tibble_cellType_files"), 
+			pattern="cellTypes_t_",
+			full.names = T
+		),
+		.combine = bind_rows
+	) %dopar% {
+		read_csv(f) %>% 
+	    mutate_at(vars(one_of('sample')), as.character) %>%
+	    mutate_at(vars(one_of('isoform')), as.character) 
+	}  %>%
+  filter(symbol %>% is.na %>% `!`) %>%
   
-  # Take the highest expressed
-  mutate_if(is.character, as.factor) %>%
-    right_join(
-     (.) %>% group_by(ens_iso) %>% summarise(m = `read count` %>% median) %>% arrange(m %>% desc) %>% head(n = 10000)
-   ) %>%
+	# Median redundant
+  do_parallel_start(40, "symbol") %>%
+  do({
+    	`%>%` = magrittr::`%>%`
+  		library(tidyverse)
+  		library(magrittr)
+    	
+    	(.) %>%
+  			group_by(sample, symbol, `Cell type formatted`,  `Data base`) %>%
+  			summarise(`read count` = `read count` %>% median(na.rm = T)) %>%
+  			ungroup() 
+  }) %>%
+  do_parallel_end() %>%
+  # Normalise
+	norm_RNAseq( 
+			sample_column = "sample", 
+			gene_column = "symbol", 
+			value_column = "read count",cpm_threshold = 0.5
+		) %>%
+  mutate(`read count normalised` = `read count normalised` %>% as.integer) %>%
+  mutate(`read count normalised log` = `read count normalised` %>% `+` (1) %>% log) %>%
+  # Mark the bimodal distributions
+  do_parallel_start(40, "symbol") %>%
+ 	do({
+		`%>%` = magrittr::`%>%`
+		library(tidyverse)
+		library(magrittr)
+		(.) %>%
+		  group_by(symbol) %>%
+		  do(
+		    (.) %>%
+		    mutate(
+  		  `bimodal p-value` =
+  		    (.) %>%
+    		  pull(`read count normalised log`) %>%
+    		  diptest::dip.test() %$%
+    		  `p.value`,
+  		  
+  		  `bimodal coefficient` = 
+  		     (.) %>%
+  		    pull(`read count normalised log`) %>%
+  		    modes::bimodality_coefficient(),
+  		  
+  		  `anova p-value` = 
+  		      ifelse(
+  		        (.) %>% distinct(`Data base`) %>% nrow > 1,
+  		        (.) %>% aov(`read count normalised log` ~ `Cell type formatted` + `Data base`, .) %>% anova %$% `Pr(>F)` %>% `[` (1),
+  		        (.) %>% aov(`read count normalised log` ~ `Cell type formatted`, .) %>% anova %$% `Pr(>F)` %>% `[` (1)
+  		      ) 
+		    )
+		  ) %>%
+		  ungroup()
+	}) %>%
+  do_parallel_end() %>% 
+  mutate(
+    `anova p-value` = ifelse(`anova p-value` == "NaN", 1, `anova p-value`),
+    `bimodal coefficient` = ifelse(`bimodal coefficient` == "NaN", 0, `bimodal coefficient`)
+  ) %>%
+  mutate(
+    `hard bimodality` =
+      (`bimodal p-value` < 0.05) + 
+      (`bimodal coefficient` > 0.6666667) + 
+      (`anova p-value` < 0.05 ) >= 2
+  ) %>%
+  mutate(`soft bimodality` = `anova p-value` < 0.0001) %>%
   
-  # Take the ones with bigger ratio sd / median
-   right_join(
-     (.) %>%
-       group_by(ens_iso) %>%
-    summarise(
-      med = `read count` %>% `+` (1) %>% median, 
-      sd = `read count` %>% `+` (1) %>% sd
-    ) %>%
-     mutate(ratio = log(sd)/log(med+1)) %>%
-     arrange(ratio %>% desc) %>%
-     head(n=20)
-   )
+  mutate(symbol = symbol %>% as.factor) %>%
+  mutate(sample = sample %>% as.factor) 
 
 ```
-
 
 ```{r predict_values, cache=TRUE}
 
