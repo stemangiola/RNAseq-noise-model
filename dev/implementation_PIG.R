@@ -444,9 +444,10 @@ SICHEL_model =
     allow_undefined = TRUE,
     includes = paste0('\n#include "',here::here("dev","besselk.hpp"),'"\n')
   )
-rstan::sampling(
+fit_sichel = rstan::sampling(
   SICHEL_model,
-  chains=1, iter=1
+  data = list(N=100, y=rnbinom(100, mu=100, size = 10)),
+  chains=4, iter=2000
 )
 
 
