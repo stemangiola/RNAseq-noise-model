@@ -178,6 +178,8 @@ poisson_inverse_gaussian_lpmf = function( y,  log_mu,  tau){
 
 approximated_modified_bessel_second_kind_log = function(z, v, s = max(0,v-10)){
 
+  # http://functions.wolfram.com/Bessel-TypeFunctions/BesselK/introductions/Bessels/ShowAll.html
+
   0.5 * ( log(pi) - log(2) ) + (-z - 0.5 * log(z)) +
 
 
@@ -426,9 +428,32 @@ tbl  %>%
 
 
 
+
+
+besselK(0.1, 100) %>% log
+besselK(10, 100) %>% log
+besselK(30, 100) %>% log
+besselK(30, 1000) %>% log
+
+BesselK(0.1, 100) %>% log
+
+
+SICHEL_model =
+  rstan::stan_model(
+    here::here("stan",sprintf("%s.stan", "poisson_GIG")),
+    allow_undefined = TRUE,
+    includes = paste0('\n#include "',here::here("dev","besselk.hpp"),'"\n')
+  )
+rstan::sampling(
+  SICHEL_model,
+  chains=1, iter=1
+)
+
+
 my_dSICHEL = function (x, mu = 1, sigma = 1, nu = -0.5, log = FALSE)
 {
-
+  library(gamlss.dist)
+  library(tidyverse)
   ly <- max(length(x), length(mu), length(sigma), length(nu))
   x <- rep(x, length = ly)
   sigma <- rep(sigma, length = ly)
@@ -437,7 +462,7 @@ my_dSICHEL = function (x, mu = 1, sigma = 1, nu = -0.5, log = FALSE)
   cvec <- exp(log(besselK((1/sigma), nu + 1)) - log(besselK((1/sigma), nu)))
   alpha <- sqrt(1 + 2 * sigma * (mu/cvec))/sigma
   lbes <- log(besselK(alpha, nu + 1)) - log(besselK((alpha),    nu))
-
+  browser()
   sumlty = my_tofySICHEL2(
     as.double(x),
     as.double(mu),
@@ -466,7 +491,7 @@ my_dSICHEL = function (x, mu = 1, sigma = 1, nu = -0.5, log = FALSE)
       as.integer(max(x) + 1),
       PACKAGE = "gamlss.dist"
     )$ans
-    )
+  )
 
   logfy <- -lgamma(x + 1) - nu * log(sigma * alpha) + sumlty +
     log(besselK(alpha, nu)) - log(besselK((1/sigma), nu))
@@ -482,20 +507,75 @@ my_dSICHEL = function (x, mu = 1, sigma = 1, nu = -0.5, log = FALSE)
   fy
 }
 
-my_dSICHEL(700, 100, 0.1, -30)
 
-besselK(0.1, 100) %>% log
-besselK(10, 100) %>% log
-besselK(30, 100) %>% log
-besselK(30, 1000) %>% log
+my_dSICHEL = function (x, mu = 1, sigma = 1, nu = -0.5)
+{
+library(gamlss.dist)
+library(tidyverse)
 
-SICHEL_model =
-  stan_model(
-    here("stan",sprintf("%s.stan", "poisson_GIG")),
-    allow_undefined = TRUE,
-    includes = paste0('\n#include "',here::here("dev","besselk.hpp"),'"\n')
-  )
-sampling(
-  SICHEL_model,
-  chains=1, iter=1
-)
+  if (sigma > 10000 & nu > 0) dNBI(x, mu = mu, sigma = 1/nu, log = T)
+  else{
+
+    cvec <- exp(log(besselK((1/sigma), nu + 1)) - log(besselK((1/sigma), nu)))
+    alpha <- sqrt(1 + 2 * sigma * (mu/cvec))/sigma
+    lbes <- log(besselK(alpha, nu + 1)) - log(besselK((alpha), nu))
+
+
+    my_tofySICHEL2(  x, mu, sigma, nu, lbes, cvec, double(length(x)), length(x), max(x) + 1)
+
+    sumlty <- as.double(
+      .C(
+        "tofySICHEL2",
+        as.double(x),
+        as.double(mu),
+        as.double(sigma),
+        as.double(nu),
+        as.double(lbes),
+        as.double(cvec),
+        ans = double(length(x)),
+        as.integer(length(x)),
+        as.integer(max(x) + 1),
+        PACKAGE = "gamlss.dist"
+      )$ans
+    )
+
+    # Return
+    -lgamma(x + 1) - nu * log(sigma * alpha) + sumlty + log(besselK(alpha, nu)) - log(besselK((1/sigma), nu))
+
+  }
+
+}
+
+my_tofySICHEL2 = function(y, mu, sigma, nu, lbes, cvec, ans, ny, maxy) {
+  maxyp1 = maxy + 1;
+  tofY = array(maxyp1);
+  iy = integer()
+  i = integer()
+  j = integer()
+
+  alpha = numeric()
+  sumT = numeric()
+
+  pow = function(x, y) x^y
+
+  for (i in 1:ny)  {
+    iy = y[i]+1;
+    tofY[1] = (mu[i]/cvec[i])*pow((1+2*sigma[i]*mu[i]/cvec[i]),(-0.5))*exp(lbes[i]);
+    alpha = sqrt(1 + 2*sigma[i]*mu[i]/cvec[i])/sigma[i];
+    sumT = 0;
+
+
+    for (j in 2:iy)  {
+      tofY[j] = ( cvec[i]*sigma[i]*(2*((j-1)+nu[i])/mu[i]) + (1/tofY[j-1])) * pow(mu[i]/(sigma[i]*alpha*cvec[i]),2);
+      #print(c(cvec[i], sigma[i],  nu[i], tofY[j-1]))
+      sumT = sumT + log(tofY[j-1]);
+
+
+    }
+    ans[i] = sumT;
+  }
+  ans
+}
+
+
+my_dSICHEL(10, 10, 0.1, -30, log = T)
