@@ -509,7 +509,7 @@ my_dSICHEL = function (x, mu = 1, sigma = 1, nu = -0.5, log = FALSE)
 }
 
 
-my_dSICHEL = function (x, mu = 1, sigma = 1, nu = -0.5)
+my_dSICHEL2 = function (x, mu = 1, sigma = 1, nu = -0.5)
 {
 library(gamlss.dist)
 library(tidyverse)
@@ -580,3 +580,16 @@ my_tofySICHEL2 = function(y, mu, sigma, nu, lbes, cvec, ans, ny, maxy) {
 
 
 my_dSICHEL(10, 10, 0.1, -30, log = T)
+
+
+SICHEL_model =
+  rstan::stan_model(
+    "stan/poisson_GIG.stan",
+    allow_undefined = TRUE,
+    includes = paste0('\n#include "',here::here("dev","besselk.hpp"),'"\n')
+  )
+fit_sichel = rstan::sampling(
+  SICHEL_model,
+  data = list(N=100, y=rnbinom(100, mu=100, size = 10)),
+  chains=1, iter=1
+)
