@@ -1,0 +1,112 @@
+---
+title: "Parsing log_bessel_k test results"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+library(cowplot)
+```
+
+```{r}
+inner_integral_rothwell <- function(v,z,u) {
+  n <- 8
+  beta <- (2*n )/(2*v+1)
+  ub <- u^beta
+  beta * exp(-ub) * (2*z + ub)^(v-0.5) * u ^ (n -1) +
+    exp(-1/u) * u ^(-2*v-1) * (2*z*u + 1)^(v-0.5)
+}
+
+```
+
+
+```{r, fig.width= 10}
+allowed_recurrence_error <-  1e-7
+
+test_data <- read_csv("C:/Users/modrak_m/Documents/stan-dev/math/log_besselk_test.csv", col_types = cols(
+  v = col_double(),
+  z = col_double(),
+  method = col_character(),
+  ratio = col_double(),
+  grad_z = col_double(),
+  grad_v = col_double()
+)) %>% mutate(ratio = ratio - 1) %>%
+  gather("type","diff", ratio, grad_v, grad_z) %>%
+  mutate(is_error = !is.finite(diff) | abs(diff) > allowed_recurrence_error)
+
+my_summarise <- function(x) {
+  summarise(x, mean_error = mean(is_error), n_error = sum(is_error), rmsv = sqrt(mean(diff ^ 2, na.rm = TRUE)), n = n())
+}
+test_data %>% group_by(method) %>% my_summarise()
+test_data %>% group_by(method, type) %>% my_summarise()
+
+my_plot <- function(x) {
+  x %>% mutate(error = diff^2 + 1e-40) %>%
+  ggplot(aes(x = z, y = v, color = error, shape = method, size = is_error)) + 
+  geom_point() +
+  scale_x_log10() + scale_y_log10() + 
+  scale_color_distiller(palette = "Spectral", trans = "log10") +
+  scale_size_manual(values = c(2.5,4)) + 
+  facet_wrap(~type)
+}
+
+test_data %>% 
+  filter(v > 0) %>%
+  my_plot()
+  
+
+test_data %>% 
+  filter(v < 0) %>%
+  mutate(v = -v) %>%
+  my_plot()
+  
+cat("Total errors: ", sum(test_data$is_error))
+```
+
+```{r}
+test_data %>% filter(type == "ratio") %>%  arrange(desc(abs(diff))) %>% select(v,z,method, type, diff)
+test_data %>% filter(z < 1e-5, abs(v) < 1e-5, type == "grad_v")
+```
+
+```{r}
+v = -85323
+z = 1.48000e-07
+value_m2 <- 2284440
+value_m1 <- 2284410
+value <- 2284380
+exp(value)
+
+exp(value_m2) - exp(log(2) + log(-v + 1) - log(z) + value_m1)
+```
+
+
+```{r}
+test_data %>% mutate(error = log(diff^2 + 1e-40)) %>% pull(error) %>% is.na() %>% sum()
+```
+```{r}
+v = 42.4242
+z = 196754
+
+(log(z) + log(2)) * (v - 0.5)
+
+-(v + 0.5) * 2 * log(z) #Mathematica log_factor
+v * (log(2) + log(z)) + lgamma(v + 0.5) -(v+0.5) * (log(z*z)) #Math. large log factor
+
+v * (log(2) + log(z)) + lgamma(v + 0.5) -(v+0.5) * (log(z*z)) #Math. intermediate
+
+#curve(cos(x) / (z*z)^(v + 0.5), from = 0, to = 1)
+#curve(inner_integral_rothwell(z,v, x), 0, 1)
+
+
+#  n <- 8
+# beta <- (2*n )/(2*v+1)
+# u <- 1e-8
+#   ub <- u^beta
+#   beta * exp(-ub) * (2*z + ub)^(v-0.5) * u ^ (n -1)
+#     exp(-1/u) * u ^(-2*v-1) * (2*z*u + 1)^(v-0.5)
+```
+```{r}
+curve(besselk_inner_integral(1.7345e-01,1.48e-7, x), 0, 1)
+exp(300)
+```
+
