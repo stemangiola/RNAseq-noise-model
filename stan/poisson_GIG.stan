@@ -42,6 +42,7 @@ functions{
 
         real lp[size(y)];
 
+//print(sumlty);
        for(i in 1:size(y))
           lp[i] =  -lgamma(y[i] + 1) - nu * log(sigma * alpha) + sumlty[i] + log_bes_nu_alpha - log_bes_nu_one_over_sigma;
 
@@ -53,16 +54,24 @@ functions{
 }
 data{
   int<lower=0> N;
+  int y[N];
 
 }
 parameters{
-  real<upper=50> nu;
+  real<upper=0> nu;
   real<lower=0> mu;
   real<lower=0> sigma;
 }
 model {
+  int x[1];
+x[1] = 10;
 
-  y ~ sichel(nu, mu , sigma);
+//nu ~ student_t(3, 0, 1);
+sigma ~ student_t(3, 0, 1);
+y ~ sichel_lpmf(nu, mu , sigma);
+
+  // print(sichel_lpmf(x | -30.0, 10.0 , 0.1));
+  //   print(sichel_lpmf(x | 30.0, 10.0 , 0.1));
 
 }
 

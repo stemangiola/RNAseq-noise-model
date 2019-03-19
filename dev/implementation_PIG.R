@@ -377,6 +377,7 @@ tbl =
     `dpoisinvgauss + stable besselK` = sapply(. , my_dpoisinvgauss, 100, 1/2000),
     `dnbinom` = sapply(. , dnbinom,mu= 100, size=15)%>% log,
     `dSICHEL` = sapply(. , gamlss.dist::dSICHEL,mu= 100, sigma=0.1, nu=-30, log=T),
+    `dSICHEL2` = sapply(. , gamlss.dist::dSICHEL,mu= 100, sigma=0.1, nu=30, log=T),
     dnorm = sapply(. ,  metRology::dt.scaled, df = 40, mean=100, sd=50) %>% log ,
     `dt.scaled` = sapply(x , dnorm,mean= 100, 50)%>% log
   ) %>%
@@ -447,7 +448,7 @@ SICHEL_model =
 fit_sichel = rstan::sampling(
   SICHEL_model,
   data = list(N=100, y=rnbinom(100, mu=100, size = 10)),
-  chains=4, iter=2000
+  chains=1, iter=1
 )
 
 
@@ -579,17 +580,62 @@ my_tofySICHEL2 = function(y, mu, sigma, nu, lbes, cvec, ans, ny, maxy) {
 }
 
 
-my_dSICHEL(10, 10, 0.1, -30, log = T)
-
+gamlss.dist::dSICHEL(10, 10, 0.1, -30, log = T)
 
 SICHEL_model =
   rstan::stan_model(
-    "stan/poisson_GIG.stan",
+    here::here("stan",sprintf("%s.stan", "poisson_GIG")),
     allow_undefined = TRUE,
     includes = paste0('\n#include "',here::here("dev","besselk.hpp"),'"\n')
   )
 fit_sichel = rstan::sampling(
   SICHEL_model,
   data = list(N=100, y=rnbinom(100, mu=100, size = 10)),
-  chains=1, iter=1
+  chains=3, iter=2000, warmup=1000, cores=4
 )
+
+
+
+
+detach("package:gamlss.dist", unload=TRUE)
+detach("package:MASS", unload=TRUE)
+library(gamlss.dist)
+library(rstan)
+
+.C(
+  "tofySICHEL2",
+  as.double(100),
+  as.double(10),
+  as.double(0.1),
+  as.double(-30),
+  as.double(-0.7413799),
+  as.double( 0.167419),
+  ans = double(length(100)),
+  as.integer(length(100)),
+  as.integer(max(100) + 1),
+  PACKAGE = "gamlss.dist"
+)$ans
+
+
+
+
+foreach(nu=seq(-30, 30, 5), .combine = bind_rows) %dopar% {
+
+  tibble(
+    nu = nu,
+    ld = sapply(seq(0,1000, 10) , gamlss.dist::dSICHEL,mu= 100, sigma=0.1, nu=nu, log=T),
+    x = seq(0,1000, 10)
+  )
+}  %>%
+ggplot(aes(x = x, y=ld, color = nu)) + geom_point(alpha=0.5) + facet_wrap(~nu) + my_theme
+
+
+foreach(nu=seq(0, 30, 2), .combine = bind_rows) %dopar% {
+
+  tibble(
+    nu = nu,
+    ld = sapply(seq(0,1000, 10) , metRology::dt.scaled, mean= 100, sd=5, df=nu) %>% log,
+    x = seq(0,1000, 10)
+  )
+}  %>%
+  ggplot(aes(x = x, y=ld, color = nu)) + geom_point(alpha=0.5) + my_theme
