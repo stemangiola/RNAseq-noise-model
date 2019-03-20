@@ -67,7 +67,7 @@ model {
 x[1] = 10;
 
 //nu ~ student_t(3, 0, 1);
-sigma ~ student_t(3, 0, 1);
+sigma ~ student_t(3, 0, 10);
 y ~ sichel_lpmf(nu, mu , sigma);
 
   // print(sichel_lpmf(x | -30.0, 10.0 , 0.1));

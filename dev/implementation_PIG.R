@@ -590,12 +590,15 @@ SICHEL_model =
   )
 fit_sichel = rstan::sampling(
   SICHEL_model,
-  data = list(N=100, y=rnbinom(100, mu=100, size = 10)),
-  chains=3, iter=2000, warmup=1000, cores=4
+  data = list(N=100, y=rnbinom(100, mu=1000, size = 10)),
+  chains=3, iter=1000, warmup=500, cores=4
 )
 
-
-
+fit_sichel = rstan::sampling(
+  SICHEL_model,
+  data = list(N=100, y=gamlss.dist::rSICHEL(100, mu=100, sigma = 10, nu=-5 )),
+  chains=3, iter=1000, warmup=500, cores=4
+)
 
 detach("package:gamlss.dist", unload=TRUE)
 detach("package:MASS", unload=TRUE)
