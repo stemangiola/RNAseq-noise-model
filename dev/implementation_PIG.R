@@ -374,6 +374,7 @@ tbl =
   tibble(
     x = .,
     `dpoisinvgauss` = sapply(. , actuar::dpoisinvgauss, 100, 2000, log=T),
+    `dPIG` = sapply(. , gamlss.dist::dPIG, 100, 0.051, log=T),
     `dpoisinvgauss + stable besselK` = sapply(. , my_dpoisinvgauss, 100, 1/2000),
     `dnbinom` = sapply(. , dnbinom,mu= 100, size=15)%>% log,
     `dSICHEL` = sapply(. , gamlss.dist::dSICHEL,mu= 100, sigma=0.1, nu=-30, log=T),
@@ -392,7 +393,7 @@ tbl  %>%
   dplyr::filter(model != "dpoisinvgauss") %>%
   dplyr::mutate(
     Type = ifelse(
-      model %in% c("dpoisinvgauss", "dpoisinvgauss + stable besselK", "dnbinom", "dSICHEL"),
+      model %in% c("dpoisinvgauss", "dpoisinvgauss + stable besselK", "dnbinom", "dSICHEL", "dPIG"),
       "Discrete",
       "Continuous"
     )
@@ -590,15 +591,12 @@ SICHEL_model =
   )
 fit_sichel = rstan::sampling(
   SICHEL_model,
-  data = list(N=100, y=rnbinom(100, mu=1000, size = 10)),
-  chains=3, iter=1000, warmup=500, cores=4
+  data = list(N=100, y=rnbinom(100, mu=100, size = 10)),
+  chains=3, iter=1000, warmup=800, cores=4
 )
 
-fit_sichel = rstan::sampling(
-  SICHEL_model,
-  data = list(N=100, y=gamlss.dist::rSICHEL(100, mu=100, sigma = 10, nu=-5 )),
-  chains=3, iter=1000, warmup=500, cores=4
-)
+
+
 
 detach("package:gamlss.dist", unload=TRUE)
 detach("package:MASS", unload=TRUE)
@@ -642,3 +640,18 @@ foreach(nu=seq(0, 30, 2), .combine = bind_rows) %dopar% {
   )
 }  %>%
   ggplot(aes(x = x, y=ld, color = nu)) + geom_point(alpha=0.5) + my_theme
+
+
+
+
+PIG_model =
+  rstan::stan_model(
+    here::here("stan",sprintf("%s.stan", "poisson_inverseGaussian")),
+    allow_undefined = TRUE,
+    includes = paste0('\n#include "',here::here("dev","besselk.hpp"),'"\n')
+  )
+fit_PIG = rstan::sampling(
+  PIG_model,
+  data = list(N=100, y= gamlss.dist::rPIG(100, mu =100, sigma = 0.1)),
+  chains=3, iter=400, cores=4
+)
