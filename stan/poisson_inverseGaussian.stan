@@ -1,30 +1,30 @@
 functions{
 
-real poisson_inverse_gaussian_lpmf(int[] y, real log_mu, real tau){
+real poisson_inverse_gaussian_log_lpmf(int[] y, real log_mu, real sigma){
 
   int y_max = max(y);
-	real tau_mu_2_log = log(tau) + log_mu + 0.6931472; // log(2)
-	real tau_mu_2_1_log =  log1p_exp(tau_mu_2_log);
-	real tau_mu_2_1_sqrt_log = 1.0/2 * tau_mu_2_1_log;
+	real sigma_mu_2_log = log(sigma) + log_mu + 0.6931472; // log(2)
+	real sigma_mu_2_1_log =  log1p_exp(sigma_mu_2_log);
+	real sigma_mu_2_1_sqrt_log = 1.0/2 * sigma_mu_2_1_log;
 	vector[y_max + 1] p_arr_log;
 	int y_plus_1[size(y)];
 
-  for(i in1:size(y)) y_plus_1[i] = y[i] +1;
+  for(i in 1:size(y)) y_plus_1[i] = y[i] +1;
 
 	// Start to create array
-	p_arr_log[1] = 1.0/tau * (1-exp(tau_mu_2_1_sqrt_log));
+	p_arr_log[1] = 1.0/sigma * (1-exp(sigma_mu_2_1_sqrt_log));
 
-	if(y_max>0)	p_arr_log[2] = log_mu - tau_mu_2_1_sqrt_log + p_arr_log[1];
+	if(y_max>0)	p_arr_log[2] = log_mu - sigma_mu_2_1_sqrt_log + p_arr_log[1];
 	if(y_max>1) {
-	  real tau_mu_2_log_tau_mu_2_1_log = tau_mu_2_log - tau_mu_2_1_log;
-	  real two_log_mu_tau_mu_2_1_log = 2* log_mu - tau_mu_2_1_log;
+	  real sigma_mu_2_log_sigma_mu_2_1_log = sigma_mu_2_log - sigma_mu_2_1_log;
+	  real two_log_mu_sigma_mu_2_1_log = 2* log_mu - sigma_mu_2_1_log;
 
 	  for(y_dot in 2:y_max) {
 
   		p_arr_log[y_dot + 1] =
   			log_sum_exp(
-  				 tau_mu_2_log_tau_mu_2_1_log + log(1-3.0/(2*y_dot)) + p_arr_log[y_dot],
-  				 two_log_mu_tau_mu_2_1_log - log(y_dot) - log(y_dot-1) + p_arr_log[y_dot-1]
+  				 sigma_mu_2_log_sigma_mu_2_1_log + log(1-3.0/(2*y_dot)) + p_arr_log[y_dot],
+  				 two_log_mu_sigma_mu_2_1_log - log(y_dot) - log(y_dot-1) + p_arr_log[y_dot-1]
   			);
 	  }
 	}
@@ -33,7 +33,7 @@ real poisson_inverse_gaussian_lpmf(int[] y, real log_mu, real tau){
 
 }
 
-    // int poisson_inverse_gamma_log_rng(int y, real mu, real beta, real tau){
+    // int poisson_inverse_gamma_log_rng(int y, real mu, real beta, real sigma){
     //
     //   // Sample inverse gaussian
     //   real y = normal_rng(0,1)^2;
@@ -44,7 +44,7 @@ real poisson_inverse_gaussian_lpmf(int[] y, real log_mu, real tau){
     //   if (z <= (mu)/(mu + x)) return x;
     //   else return mu_2/x;
     //
-    //   return poisson(inv_gamma_rng(.., ..)); // real mu, real beta, real tau
+    //   return poisson(inv_gamma_rng(.., ..)); // real mu, real beta, real sigma
     //
     // }
 }
@@ -59,7 +59,7 @@ parameters {
 model {
 mu ~ normal(0,5);
 sigma ~ normal(0,1);
-y ~ poisson_inverse_gaussian(mu,sigma);
+y ~ poisson_inverse_gaussian_log(mu,sigma);
 
 // print( poisson_inverse_gaussian_lpmf(x | log(100), 1));
 
