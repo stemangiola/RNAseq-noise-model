@@ -1,4 +1,4 @@
-prepare_kfold <- function(K, model_defs, base_data) {
+prepare_kfold <- function(K, model_defs, base_data, seed = NULL) {
   model_names <- unique(model_defs$model_name)
 
   models =
@@ -12,6 +12,10 @@ prepare_kfold <- function(K, model_defs, base_data) {
 
   model_defs <- model_defs %>% mutate(id = 1:n())
   model_defs_kfold = model_defs %>% crossing(fold = 1:K)
+
+  if(!is.null(seed)) {
+    set.seed(seed)
+  }
 
   folds = kfold_split_random(K, base_data$N)
   data_list = list()
