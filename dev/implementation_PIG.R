@@ -650,8 +650,15 @@ PIG_model =
     allow_undefined = TRUE,
     includes = paste0('\n#include "',here::here("dev","besselk.hpp"),'"\n')
   )
-fit_PIG = rstan::sampling(
+rstan::sampling(
   PIG_model,
-  data = list(N=100, y= gamlss.dist::rPIG(100, mu =100, sigma = 0.1)),
-  chains=3, iter=400, cores=4
-)
+  data = list(N=100, y= gamlss.dist::rPIG(100, mu =exp(6), sigma = 0.1)),
+  chains=1, iter=400, cores=4
+) %>% traceplot
+
+rstan::sampling(
+  PIG_model,
+  data = list(N=100, y= rnbinom(100,mu = exp(5), size = 5 )),
+  chains=1, iter=400, cores=4
+) %>% traceplot
+
