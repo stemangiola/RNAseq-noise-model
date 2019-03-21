@@ -45,7 +45,8 @@ my_theme =
 	)
 
 # Tools
-source("https://gist.githubusercontent.com/stemangiola/90a528038b8c52b21f9cfa6bb186d583/raw/b7862745e36ad7a7d2250e0c49ee36dbabc36164/transcription_tool_kit.R")
+source("https://gist.githubusercontent.com/stemangiola/90a528038b8c52b21f9cfa6bb186d583/raw/dbd92c49fb03fb05ab0b465704b99c0a39e654d5/transcription_tool_kit.R")
+source("https://gist.githubusercontent.com/stemangiola/dd3573be22492fc03856cd2c53a755a9/raw/e4ec6a2348efc2f62b88f10b12e70f4c6273a10a/tidy_extensions.R")
 
 PIG_model =
   rstan::stan_model(
@@ -154,7 +155,7 @@ counts_noisy = read_csv("t_cells_with_error_qq_plot_means.csv")
 
 ## 1000 genes plot ranks
 
-```{r}
+```{r rank, cache=TRUE, fig.dim = c(9, 9)}
 
 shards = 56
 n_genes = 100
@@ -224,123 +225,97 @@ data_for_stan_MPI =
   inner_join( (.) %>% distinct(symbol) %>% sample_n(n_genes) ) %>%
   
   # Add sample idx
-  mutate(sample_idx = as.integer(factor(sample))) %>%
-  
-  # Convert for MPI
+  mutate(sample_idx = as.integer(factor(sample))) 
+
+xx = data_for_stan_MPI %>%
   left_join(
-    (.) %>% 
-      distinct(symbol) %>%
-      mutate( idx_MPI = head( rep(1:shards, (.) %>% nrow %>% `/` (shards) %>% ceiling ), n=(.) %>% nrow) )
+    (.) %>% group_by(symbol) %>% summarise(s=`read count normalised` %>% sum) %>% arrange(s)
   ) %>%
-  arrange(idx_MPI, symbol) %>%
-  
-  # Decide start - end location
-  group_by(idx_MPI) %>%
-  do(
+  filter(s > 0) %>%
+ group_by(symbol) %>%
+   do({
+     
+     `%>%` = magrittr::`%>%`
+		library(tidyverse)
+		library(magrittr)
+     # lines(seq(0,1000, 10) , sapply(seq(0,1000, 10)  , gamlss.dist::dSICHEL,mu= 100, sigma=0.05, nu=-0.3, log=T))
+    #browser()
+    # Negative binomial
+    fit_NB =  (.) %>%
+       pull(`read count normalised`) %>%
+      MASS::fitdistr("Negative Binomial")
+    
+    #PIG
+    fit_PIG = 
+      optimizing(
+        PIG_model, 
+        data = list(N = (.) %>% nrow, y = (.) %>% pull(`read count normalised`)),
+        init = list(mu = (.) %>% pull(`read count normalised`) %>% `+` (1) %>% log %>% mean)
+        ) %$% par
+    
+    # # Sichel
+    # fit_SH =  (.) %>%
+    #    arrange(`read count`) %>%
+    #    pull(`read count`) %>%
+    #   MASS::fitdistr(gamlss.dist::dSICHEL, list(mu= 100, sigma=0.1, nu=-5), upper = c(4000, 20, 0),  lower=c(0, 0.0001, -10))
+
+    
     (.) %>%
-    left_join(
-      (.) %>% 
-      distinct(idx_MPI, sample, symbol) %>% 
-      arrange(idx_MPI, symbol) %>%
-      count(idx_MPI, symbol) %>% 
-      mutate(end = cumsum(n)) %>%
-      mutate(start = c(1, .$end %>% rev() %>% `[` (-1) %>% rev %>% `+` (1)))
-    ) 
-  ) %>%
-  ungroup()
+      arrange(`read count normalised`) %>%
+      mutate(
+      	predicted_NB = 
+      		qnbinom(
+	      		ppoints(`read count normalised`), 
+	      		size=(fit_NB[1] %$% estimate)[1], 
+	      		mu=(fit_NB[1] %$% estimate)[2]
+	      		)
+      ) %>%
+      # PIG
+      mutate(
+      	predicted_PIG = 
+      		gamlss.dist::qPIG(
+      			ppoints(`read count normalised`), 
+      			mu = fit_PIG[2] %>% exp, 
+      			sigma=fit_PIG[1]
+      			
+      	) 
+      )
+    #%>%
+      # mutate(
+      # 	predicted_SH = 
+      # 		gamlss.dist::qSICHEL(
+      # 			ppoints(`read count`), 
+      # 			nu = (fit_SH[1] %$% estimate)[3], 
+      # 			sigma=(fit_SH[1] %$% estimate)[2], 
+      # 			mu=(fit_SH[1] %$% estimate)[1], 
+      # 			max.value = max(`read count`)
+      # 			)
+      # 	) %>%
+    	
+    # 	# For track record
+    #   mutate(
+    #     SH_mu = (fit_SH[1] %$% estimate)[1], 
+    #     SH_sigma = (fit_SH[1] %$% estimate)[2],
+    #     SH_nu = (fit_SH[1] %$% estimate)[3]
+    #     )
+      
+ 	}) %>%
+  ungroup() %>%
+  gather(model, predicted, contains("predicted")) %>%
+  mutate(`log of error` = (`read count normalised` - predicted) %>% abs %>% `+` (1) %>% log) %>%
+  mutate(`error of log` = (log(`read count normalised` + 1) - log(predicted + 1)) %>% abs ) %>%
+  mutate(`error scaled` =  ((`read count normalised` - predicted) / (`read count normalised` + 1) ) %>%  abs) %>%
+  left_join(
+    (.) %>%
+    group_by(symbol, model) %>% 
+    summarise(`gene error mean` = `error of log` %>% mean)
+  )
 
-data_for_stan_MPI = list(
-  
-  N = counts_stan_MPI %>% distinct(sample, symbol, idx_MPI) %>% count(idx_MPI) %>% pull(n) %>% max,
-  M = counts_stan_MPI %>% distinct(start, idx_MPI) %>% count(idx_MPI) %>% pull(n) %>% max,
-  G = counts_stan_MPI %>% distinct(symbol) %>% nrow(),
-  S = counts_stan_MPI %>% distinct(sample) %>% nrow(),
-  D = 1, #counts_stan_MPI %>% distinct(`Data base`) %>% nrow(),
-  G_per_shard = counts_stan_MPI %>% distinct(symbol, idx_MPI) %>% count(idx_MPI) %>% pull(n) %>% as.array,
-  n_shards = min(shards, counts_stan_MPI %>% distinct(idx_MPI) %>% nrow),
-  G_per_shard_idx = c(0, counts_stan_MPI %>% distinct(symbol, idx_MPI) %>% count(idx_MPI) %>% pull(n) %>% cumsum),
-  
-  
-  counts = 
-    foreach(idx = counts_stan_MPI %>% distinct(idx_MPI) %>% pull(idx_MPI), .combine = full_join) %do% {
-      counts_stan_MPI %>%
-      filter(idx_MPI == idx) %>%
-      select(`read count normalised`) %>% 
-      setNames(idx) %>%
-      mutate(i = 1:n())
-    } %>%
-    select(-i) %>%
-    replace(is.na(.), 0) %>%
-    mutate_if(is.numeric, as.integer) %>%
-    as_matrix() %>% t,
-  
-  symbol_end =   
-    foreach(idx = counts_stan_MPI %>% distinct(idx_MPI) %>% pull(idx_MPI), .combine = full_join) %do% {
-      counts_stan_MPI %>%
-      filter(idx_MPI == idx) %>%
-      distinct(end) %>% 
-      rbind(0, .) %>%
-      #mutate(start = start - ( (.) %>% head(n=1) %>% pull(start)) + 1) %>%
-      setNames(idx) %>%
-      mutate(i = 1:n())
-    } %>%
-    select(-i) %>%
-    replace(is.na(.), 0) %>%
-    mutate_if(is.numeric, as.integer) %>%
-    as_matrix() %>% t,
-  
-  symbols = 
-    foreach(idx = counts_stan_MPI %>% distinct(idx_MPI) %>% pull(idx_MPI), .combine = full_join) %do% {
-      counts_stan_MPI %>%
-      filter(idx_MPI == idx) %>%
-      distinct(symbol) %>% 
-      mutate(symbol = as.character(symbol)) %>%
-      setNames(idx) %>%
-      mutate(i = 1:n())
-    } %>%
-    select(-i),
-  
-  sample_idx =  
-    foreach(idx = counts_stan_MPI %>% distinct(idx_MPI) %>% pull(idx_MPI), .combine = full_join) %do% {
-      counts_stan_MPI %>%
-      filter(idx_MPI == idx) %>%
-      select(sample_idx) %>% 
-      setNames(idx) %>%
-      mutate(i = 1:n())
-    } %>%
-    select(-i) %>%
-    replace(is.na(.), 0) %>%
-    mutate_if(is.numeric, as.integer) %>%
-    as_matrix() %>% t
-)
-
-fileConn<-file("~/.R/Makevars")
-writeLines(c("CXX14FLAGS += -O3","CXX14FLAGS += -DSTAN_THREADS", "CXX14FLAGS += -pthread"), fileConn)
-close(fileConn)
-Sys.setenv("STAN_NUM_THREADS" = 14)
-nb_model_MPI = stan_model(here("stan",sprintf("%s.stan", "negBinomial_tidy_MPI")))
-Sys.time()
-fit_MPI = 
-  sampling(
-      nb_model_MPI,
-    data = data_for_stan_MPI,
-    chains=3, iter=300, warmup=200, save_warmup = FALSE
-)
-
-
-fileConn<-file("~/.R/Makevars")
-writeLines(c("CXX14FLAGS += -O3","CXX14FLAGS += -DSTAN_THREADS", "CXX14FLAGS += -pthread"), fileConn)
-close(fileConn)
-Sys.setenv("STAN_NUM_THREADS" = 14)
-PIG_model_MPI = stan_model(here("stan",sprintf("%s.stan", "PIG_tidy_MPI")))
-Sys.time()
-fit_MPI_PIG = 
-  sampling(
-      PIG_model_MPI,
-    data = data_for_stan_MPI,
-    chains=3, iter=300, warmup=200, save_warmup = FALSE
-)
-
+xx %>%
+  distinct(symbol, model, `gene error mean`) %>%
+  arrange(`gene error mean` %>% desc) %>%
+  mutate(symbol = factor(symbol, unique(symbol))) %>%
+  ggplot(aes(x=symbol, y=`gene error mean`, color = model)) + geom_point() + my_theme
 ```
 
 
