@@ -79,9 +79,10 @@ model_defs = data.frame(model_name = c(
   "negBinomial",
   "gamma_multinomial",
   "logNormal_multinomial",
-  "multinomial" #,
-#  "negBinomial_deseq2_multinomial"
-  ), adapt_delta = c(0.8, 0.8, 0.95, 0.95, 0.8))
+  "multinomial" ,
+  "gamma_multinomial_2"
+  #"negBinomial_deseq2_multinomial"
+  ), adapt_delta = c(0.8, 0.8, 0.95, 0.95, 0.8, 0.95))
 ```
 
 ```{r}
@@ -92,17 +93,15 @@ deseq_normalization <- estimateSizeFactorsForMatrix(t(data_for_stan_bad_genes$co
 ```{r}
 K = 10
 
-set.seed(1346842485)
-
 N_samples_gamma_log_lik <- 10000
 #Copy the data for all runs
-kfold_def <- prepare_kfold(K, model_defs, data_for_stan_bad_genes)
+kfold_def <- prepare_kfold(K, model_defs, data_for_stan_bad_genes, seed = 1346842485)
 for(i in 1:nrow(kfold_def$model_defs_kfold)) {
   if(kfold_def$model_defs_kfold$model_name[i] %in% c("negBinomial_deseq2","negBinomial_deseq2_multinomial")) {
     kfold_def$data_list[[i]]$normalization = deseq_normalization
     kfold_def$data_list[[i]]$my_prior = c(5, 3)
   }
-  if(kfold_def$model_defs_kfold$model_name[i] == "gamma_multinomial") {
+  if(kfold_def$model_defs_kfold$model_name[i] %in% c("gamma_multinomial", "gamma_multinomial_2")) {
     kfold_def$data_list[[i]]$N_samples_log_lik = N_samples_gamma_log_lik
   }
 }
@@ -117,7 +116,14 @@ fits_gamma <- kfold_res$fits[indices_gamma]
 holdout_gamma <- lapply(kfold_def$data_list[indices_gamma], '[[', "holdout")
 log_lik_gamma_sampled <- extract_log_lik_K(fits_gamma, holdout_gamma, "log_lik_sampled")
 
-kfold_all <- c(kfold_res$kfold, list(gamma_multinomial_sampled = kfold(log_lik_gamma_sampled)))
+id_gamma2 <- kfold_def$model_defs %>% filter(model_name == "gamma_multinomial_2") %>% pull(id)
+indices_gamma2 = kfold_def$model_defs_kfold$id == id_gamma2
+fits_gamma2 <- kfold_res$fits[indices_gamma2]
+holdout_gamma2 <- lapply(kfold_def$data_list[indices_gamma2], '[[', "holdout")
+log_lik_gamma2_sampled <- extract_log_lik_K(fits_gamma2, holdout_gamma, "log_lik_sampled")
+
+
+kfold_all <- c(kfold_res$kfold, list(gamma_multinomial_sampled = kfold(log_lik_gamma_sampled), gamma_multinomial_2_sampled = kfold(log_lik_gamma2_sampled)))
 compare(x = kfold_all)
 
 ```

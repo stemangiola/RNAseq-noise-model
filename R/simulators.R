@@ -242,14 +242,13 @@ generate_data_lognormal_multinomial <- function(G, sums, is_prior_assymetric = F
   )
 }
 
-generate_data_gamma_multinomial <- function(G, sums) {
+generate_data_gamma_multinomial_helper <- function(G, sums, phi_generator) {
   N = length(sums)
 
   lambda_sigma = abs(rnorm(1, 0, 2))
   lambda = rnorm_sum_to_zero(G) * lambda_sigma
   #phi_raw_sigma = rgamma(1, shape = 5, rate = 5)#abs(rnorm(1, 0, 2))
-  phi_raw = abs(rnorm(G, 0, 1))
-  phi = 1/sqrt(phi_raw)
+  phi <- phi_generator(lambda)
 
   excess = 50 #This should be irrelevant to the model
 
@@ -280,6 +279,25 @@ generate_data_gamma_multinomial <- function(G, sums) {
     )
   )
 }
+
+generate_data_gamma_multinomial <- function(G, sums) {
+  phi_generator <- function(lambda) {
+    phi_raw = abs(rnorm(G, 0, 1))
+    phi = 1/sqrt(phi_raw)
+  }
+  generate_data_gamma_multinomial_helper(G, sums, phi_generator)
+}
+
+generate_data_gamma_multinomial_2 <- function(G, sums, asymptDisp, extraPois) {
+  phi_generator <- function(lambda) { asymptDisp + extraPois / exp(lambda) }
+  result <- generate_data_gamma_multinomial_helper(G, sums, phi_generator)
+  result$true$phi <- NULL
+  result$true$asymptDisp <- asymptDisp
+  result$true$extraPois <- extraPois
+
+  result
+}
+
 
 generate_data_lognormal_test <- function(G, N) {
   lambda_prior = 1 + abs(rnorm(1, 0, 1))
