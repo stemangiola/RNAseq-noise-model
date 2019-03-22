@@ -215,7 +215,7 @@ xx = data_for_stan_MPI %>%
     `%>%` = magrittr::`%>%`
     library(tidyverse)
     library(magrittr)
-
+library(rstan)
     PIG_model =
   rstan::stan_model(
     here::here("stan",sprintf("%s.stan", "poisson_inverseGaussian"))
@@ -224,8 +224,8 @@ xx = data_for_stan_MPI %>%
     (.) %>% group_by(symbol) %>%
       do({
         `%>%` = magrittr::`%>%`
-        library(tidyverse)
-        library(magrittr)
+        # library(tidyverse)
+        # library(magrittr)
         # lines(seq(0,1000, 10) , sapply(seq(0,1000, 10)  , gamlss.dist::dSICHEL,mu= 100, sigma=0.05, nu=-0.3, log=T))
         #browser()
         # Negative binomial
