@@ -159,163 +159,168 @@ counts_noisy = read_csv("t_cells_with_error_qq_plot_means.csv")
 
 shards = 56
 n_genes = 100
+counts_source = "Acute_Myeloid_Leukemia_Primary_Blood_Derived_Cancer_-_Peripheral_Blood"
 
-data_for_stan_MPI = 
-	foreach(
-		f = dir(
-			path = 	here("big_data", "tibble_cellType_files"), 
-			pattern="cellTypes_t",
-			full.names = T
-		),
-		.combine = bind_rows
-	) %dopar% {
-		read_csv(f) %>% 
-	    mutate_at(vars(one_of('sample')), as.character) %>%
-	    mutate_at(vars(one_of('isoform')), as.character)
-	} %>%
-
-  filter(symbol %>% is.na %>% `!`) %>%
-  filter(`Cell type formatted` %>% is.na %>% `!`) %>%
+data_for_stan_MPI =
   
-  # Setup level 1 names
-  mutate(
-    `level 1` =
-      ifelse(
-        grepl("^b_|^t_|natural_killer|monocyte|mono_|myeloid|macrophage|natural_killer|nk|neutrophil|eosinophil", `Cell type formatted`), "immune_cell",
-        ifelse(
-          `Cell type formatted` %in% c("epithelial", "endothelial", "fibroblast"),
-        `Cell type formatted`,
-        NA
-      )
-    )
-  ) %>%
-  filter(`level 1` %>% is.na %>% `!`) %>%
-  mutate(`symbol original` = symbol) %>%
-  unite(symbol, c("level 1", "symbol"), remove = F) %>%
-
-	# Median redundant
+  read_csv(here(
+    "big_data",
+    "tibble_TCGA_files",
+    paste0(counts_source, ".csv")
+  )) %>%
+  mutate(symbol = ens_iso) %>%
+  
+  # Median redundant
   do_parallel_start(40, "symbol") %>%
   do({
-    	`%>%` = magrittr::`%>%`
-  		library(tidyverse)
-  		library(magrittr)
-    	
-    	(.) %>%
-  			group_by(sample, symbol, `level 1`, `Cell type formatted`,  `Data base`) %>%
-  			summarise(`read count` = `read count` %>% median(na.rm = T)) %>%
-  			ungroup() 
+    `%>%` = magrittr::`%>%`
+    library(tidyverse)
+    library(magrittr)
+    
+    (.) %>%
+      group_by(sample, symbol) %>%
+      summarise(`read count` = `read count` %>% median(na.rm = T)) %>%
+      ungroup()
   }) %>%
   do_parallel_end() %>%
-
+  
   # Normalise
-	norm_RNAseq( 
-			sample_column = "sample", 
-			gene_column = "symbol", 
-			value_column = "read count",cpm_threshold = 0.5
-		) %>%
+  norm_RNAseq(
+    sample_column = "sample",
+    gene_column = "symbol",
+    value_column = "read count",
+    cpm_threshold = 10,
+    prop = 9 / 10
+  ) %>%
   mutate(`read count normalised` = `read count normalised` %>% as.integer) %>%
   mutate(`read count normalised log` = `read count normalised` %>% `+` (1) %>% log) %>%
-
+  
   # hOUSEKEEPING
   mutate(symbol = symbol %>% as.factor) %>%
   mutate(sample = sample %>% as.factor) %>%
   
-  # 
+  #
   filter(!filt_for_calc) %>%
-  inner_join( (.) %>% distinct(symbol) %>% sample_n(n_genes) ) %>%
+  
+  inner_join((.) %>% distinct(symbol) %>% sample_n(n_genes)) %>%
   
   # Add sample idx
-  mutate(sample_idx = as.integer(factor(sample))) 
+  mutate(sample_idx = as.integer(factor(sample)))
 
 xx = data_for_stan_MPI %>%
-  left_join(
-    (.) %>% group_by(symbol) %>% summarise(s=`read count normalised` %>% sum) %>% arrange(s)
-  ) %>%
+  left_join((.) %>% group_by(symbol) %>% summarise(s = `read count normalised` %>% sum) %>% arrange(s)) %>%
   filter(s > 0) %>%
- group_by(symbol) %>%
-   do({
-     
-     `%>%` = magrittr::`%>%`
-		library(tidyverse)
-		library(magrittr)
-     # lines(seq(0,1000, 10) , sapply(seq(0,1000, 10)  , gamlss.dist::dSICHEL,mu= 100, sigma=0.05, nu=-0.3, log=T))
-    #browser()
-    # Negative binomial
-    fit_NB =  (.) %>%
-       pull(`read count normalised`) %>%
-      MASS::fitdistr("Negative Binomial")
-    
-    #PIG
-    fit_PIG = 
-      optimizing(
-        PIG_model, 
-        data = list(N = (.) %>% nrow, y = (.) %>% pull(`read count normalised`)),
-        init = list(mu = (.) %>% pull(`read count normalised`) %>% `+` (1) %>% log %>% mean)
-        ) %$% par
-    
-    # # Sichel
-    # fit_SH =  (.) %>%
-    #    arrange(`read count`) %>%
-    #    pull(`read count`) %>%
-    #   MASS::fitdistr(gamlss.dist::dSICHEL, list(mu= 100, sigma=0.1, nu=-5), upper = c(4000, 20, 0),  lower=c(0, 0.0001, -10))
+  do_parallel_start(40, "symbol") %>%
+  do({
+    `%>%` = magrittr::`%>%`
+    library(tidyverse)
+    library(magrittr)
 
+    PIG_model =
+  rstan::stan_model(
+    here::here("stan",sprintf("%s.stan", "poisson_inverseGaussian"))
+  )
     
-    (.) %>%
-      arrange(`read count normalised`) %>%
-      mutate(
-      	predicted_NB = 
-      		qnbinom(
-	      		ppoints(`read count normalised`), 
-	      		size=(fit_NB[1] %$% estimate)[1], 
-	      		mu=(fit_NB[1] %$% estimate)[2]
-	      		)
-      ) %>%
-      # PIG
-      mutate(
-      	predicted_PIG = 
-      		gamlss.dist::qPIG(
-      			ppoints(`read count normalised`), 
-      			mu = fit_PIG[2] %>% exp, 
-      			sigma=fit_PIG[1]
-      			
-      	) 
-      )
-    #%>%
-      # mutate(
-      # 	predicted_SH = 
-      # 		gamlss.dist::qSICHEL(
-      # 			ppoints(`read count`), 
-      # 			nu = (fit_SH[1] %$% estimate)[3], 
-      # 			sigma=(fit_SH[1] %$% estimate)[2], 
-      # 			mu=(fit_SH[1] %$% estimate)[1], 
-      # 			max.value = max(`read count`)
-      # 			)
-      # 	) %>%
-    	
-    # 	# For track record
-    #   mutate(
-    #     SH_mu = (fit_SH[1] %$% estimate)[1], 
-    #     SH_sigma = (fit_SH[1] %$% estimate)[2],
-    #     SH_nu = (fit_SH[1] %$% estimate)[3]
-    #     )
-      
- 	}) %>%
-  ungroup() %>%
+    (.) %>% group_by(symbol) %>%
+      do({
+        `%>%` = magrittr::`%>%`
+        library(tidyverse)
+        library(magrittr)
+        # lines(seq(0,1000, 10) , sapply(seq(0,1000, 10)  , gamlss.dist::dSICHEL,mu= 100, sigma=0.05, nu=-0.3, log=T))
+        #browser()
+        # Negative binomial
+        fit_NB =  (.) %>%
+          pull(`read count normalised`) %>%
+          MASS::fitdistr("Negative Binomial")
+        
+        #PIG
+        fit_PIG =
+          rstan::optimizing(
+            PIG_model,
+            data = list(
+              N = (.) %>% nrow,
+              y = (.) %>% pull(`read count normalised`)
+            ),
+            init = list(
+              mu = (.) %>% pull(`read count normalised`) %>% `+` (1) %>% log %>% mean
+            )
+          ) %$% par
+        
+        # # Sichel
+        # fit_SH =  (.) %>%
+        #    arrange(`read count`) %>%
+        #    pull(`read count`) %>%
+        #   MASS::fitdistr(gamlss.dist::dSICHEL, list(mu= 100, sigma=0.1, nu=-5), upper = c(4000, 20, 0),  lower=c(0, 0.0001, -10))
+        
+        
+        (.) %>%
+          arrange(`read count normalised`) %>%
+          mutate(predicted_NB =
+                   qnbinom(
+                     ppoints(`read count normalised`),
+                     size = (fit_NB[1] %$% estimate)[1],
+                     mu = (fit_NB[1] %$% estimate)[2]
+                   )) %>%
+          # PIG
+          mutate(predicted_PIG =
+                   gamlss.dist::qPIG(
+                     ppoints(`read count normalised`),
+                     mu = fit_PIG[2] %>% exp,
+                     sigma = fit_PIG[1]
+                     
+                   ))
+        #%>%
+        # mutate(
+        # 	predicted_SH =
+        # 		gamlss.dist::qSICHEL(
+        # 			ppoints(`read count`),
+        # 			nu = (fit_SH[1] %$% estimate)[3],
+        # 			sigma=(fit_SH[1] %$% estimate)[2],
+        # 			mu=(fit_SH[1] %$% estimate)[1],
+        # 			max.value = max(`read count`)
+        # 			)
+        # 	) %>%
+        
+        # 	# For track record
+        #   mutate(
+        #     SH_mu = (fit_SH[1] %$% estimate)[1],
+        #     SH_sigma = (fit_SH[1] %$% estimate)[2],
+        #     SH_nu = (fit_SH[1] %$% estimate)[3]
+        #     )
+        
+      }) %>% ungroup()
+  }) %>%
+  do_parallel_end() %>%
   gather(model, predicted, contains("predicted")) %>%
   mutate(`log of error` = (`read count normalised` - predicted) %>% abs %>% `+` (1) %>% log) %>%
-  mutate(`error of log` = (log(`read count normalised` + 1) - log(predicted + 1)) %>% abs ) %>%
-  mutate(`error scaled` =  ((`read count normalised` - predicted) / (`read count normalised` + 1) ) %>%  abs) %>%
-  left_join(
-    (.) %>%
-    group_by(symbol, model) %>% 
-    summarise(`gene error mean` = `error of log` %>% mean)
-  )
+  mutate(`error of log` = (log(`read count normalised` + 1) - log(predicted + 1)) %>% abs) %>%
+  mutate(`error scaled` =  ((`read count normalised` - predicted) / (`read count normalised` + 1)
+  ) %>%  abs) %>%
+  left_join((.) %>%
+              group_by(symbol, model) %>%
+              summarise(`gene error mean` = `error of log` %>% mean))
+```
 
-xx %>%
+```{r, fig.dim = c(9, 9)}
+(xx %>%
   distinct(symbol, model, `gene error mean`) %>%
   arrange(`gene error mean` %>% desc) %>%
   mutate(symbol = factor(symbol, unique(symbol))) %>%
-  ggplot(aes(x=symbol, y=`gene error mean`, color = model)) + geom_point() + my_theme
+  ggplot(aes(x = symbol, y = `gene error mean`, color = model)) + geom_point() + my_theme
+) 
+
+
+xx %>% 
+  filter(symbol %in% c("ENSG00000242574.7",  "ENSG00000256338.2", "ENSG00000151612.14",  "ENSG00000137460.7")) %>%
+	ggplot(aes(x=`predicted` + 1, y=`read count normalised` + 1, label=symbol, color=model)) + 
+	geom_abline(intercept = 0, slope = 1, color="grey") + 
+	geom_point() + 
+	facet_wrap(~ symbol, scales = "free")  +
+	expand_limits(y=1, x=1) + 
+	scale_y_log10() +
+	scale_x_log10() +
+	my_theme 
+
 ```
 
 
