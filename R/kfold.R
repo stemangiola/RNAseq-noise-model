@@ -31,6 +31,7 @@ prepare_kfold <- function(K, model_defs, base_data, seed = NULL) {
   }
 
   list(
+    base_data = base_data,
     data_list = data_list,
     control_list = list,
     model_defs = model_defs,
@@ -71,7 +72,27 @@ run_kfold <- function(kfold_def, name_for_cache) {
   )
 }
 
+extract_holdout_ranks <- function(list_of_stanfits, list_of_holdout, base_data) {
+  K <- length(list_of_stanfits)
+  N_samples <- 100
+  all_genes_holdout_gen <- array(NA_real_, c(N_samples, base_data$N, base_data$G))
+  for(i in 1:K) {
+    counts_gen <- rstan::extract(list_of_stanfits[[i]], pars = "counts_gen_geneWise")$counts_gen_geneWise
+    holdout <- list_of_holdout[[i]]
+    # I should better get samples at fixed steps, but ignoring for now
+    samples_to_use <- sample(1:(dim(counts_gen)[1]), N_samples)
+    all_genes_holdout_gen[, holdout, ] <- counts_gen[samples_to_use, holdout, ]
+  }
+  if(any(is.na(counts_gen))) {
+    stop("Inconsistent holdout data")
+  }
 
+  holdout_ranks <- sweep(all_genes_holdout_gen, MARGIN = c(2,3), STATS = base_data$counts, FUN = "<") %>%
+    apply(MARGIN = c(2,3), FUN = sum)
+
+  dimnames(holdout_ranks) <- dimnames(base_data$counts)
+  holdout_ranks
+}
 
 #Functions extract_log_lik and kfold taken from
 #https://github.com/stan-dev/stancon_talks/blob/master/2017/Contributed-Talks/07_nicenboim/kfold.Rmd
