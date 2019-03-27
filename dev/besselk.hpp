@@ -128,7 +128,7 @@ T_v asymptotic_large_z(const T_v &v, const double &z) {
 // referenced from the test code.
 enum class ComputationType { Rothwell, Asymp_v, Asymp_z };
 
-const double rothwell_max_v = 75;
+const double rothwell_max_v = 50;
 const double rothwell_max_log_z_over_v = 300;
 
 inline ComputationType choose_computation_type(const double &v,
@@ -325,3 +325,15 @@ typename boost::math::tools::promote_args<T0__, T1__>::type
     return(log_modified_bessel_second_kind_frac(v,z));
 
 }
+
+double
+  log_besselk_frac_grad_v(const double& v, const double& z, std::ostream *msgs) {
+    start_nested();
+
+    var v_var(v);
+    var res = log_modified_bessel_second_kind_frac(v_var,z);
+    res.grad();
+    double result = v_var.adj();
+    recover_memory_nested();
+    return result;
+  }
