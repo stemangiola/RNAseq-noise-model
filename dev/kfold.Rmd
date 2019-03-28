@@ -77,13 +77,13 @@ data_for_stan_bad_genes$generate_quantities <- 1
 ```{r}
 model_defs = data.frame(model_name = c(
   "negBinomial_deseq2", 
-  "negBinomial",
-  "gamma_multinomial",
-  "logNormal_multinomial",
-  "multinomial" ,
-  "gamma_multinomial_2"
+  "negBinomial"
+  # "gamma_multinomial",
+  # "logNormal_multinomial",
+  # "multinomial" ,
+  # "gamma_multinomial_2"
   #"negBinomial_deseq2_multinomial"
-  ), adapt_delta = c(0.8, 0.8, 0.95, 0.95, 0.8, 0.95))
+  ), adapt_delta = c(0.8, 0.8)) #, 0.95, 0.95, 0.8, 0.95))
 ```
 
 ```{r}
@@ -92,7 +92,7 @@ deseq_normalization <- estimateSizeFactorsForMatrix(t(data_for_stan_bad_genes$co
 
 
 ```{r}
-K = 10
+K = 2
 
 N_samples_gamma_log_lik <- 10000
 #Copy the data for all runs
@@ -145,9 +145,10 @@ holdout_ranks_all <- kfold_def$model_defs$id %>% map(function(id) {
 ```
 
 ```{r}
-holdout_ranks_all %>% ggplot(aes(x = rank)) + geom_histogram(bins = 101) + facet_wrap(~model, scales = "free_y")
+plot_holdout_ranks(holdout_ranks_all, binwidth = 4)
 ```
 ```{r}
 holdout_ranks_all %>% filter(model %in% c("gamma_multinomial","negBinomial")) %>% ggplot(aes(x = rank)) + geom_histogram(bins = 10) + facet_grid(gene~model, scales = "free_y")
 ```
 
+TODO:test K-fold diag on simulations from known model

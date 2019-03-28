@@ -87,11 +87,46 @@ extract_holdout_ranks <- function(list_of_stanfits, list_of_holdout, base_data) 
     stop("Inconsistent holdout data")
   }
 
-  holdout_ranks <- sweep(all_genes_holdout_gen, MARGIN = c(2,3), STATS = base_data$counts, FUN = "<") %>%
+  holdout_ranks_less <- sweep(all_genes_holdout_gen, MARGIN = c(2,3), STATS = base_data$counts, FUN = "<") %>%
     apply(MARGIN = c(2,3), FUN = sum)
+
+  holdout_ranks_equal <- sweep(all_genes_holdout_gen, MARGIN = c(2,3), STATS = base_data$counts, FUN = "==") %>%
+    apply(MARGIN = c(2,3), FUN = sum)
+
+  #If there are equal values, sample the rank randomly over the equal values
+  #Using a trich with rounded uniform random numbers to get that in a vectorized way
+  holdout_ranks = holdout_ranks_less +
+    round((holdout_ranks_equal + 1) * array(runif(length(holdout_ranks_equal)), dim(holdout_ranks_equal)) - 0.5)
 
   dimnames(holdout_ranks) <- dimnames(base_data$counts)
   holdout_ranks
+}
+
+plot_holdout_ranks <- function(ranks, binwidth = 1, facet = ~ model) {
+  if(100 %% binwidth != 0) {
+    stop("binwidth has to divide 100")
+  }
+
+  n_ranks <- aggregate(update.formula(facet, rank ~ .) , ranks, length)
+  if(length(unique(n_ranks$rank)) != 1) {
+    stop("Unequal number of observations per group")
+  }
+
+  n_ranks <- n_ranks$rank[1]
+
+  CI = qbinom(c(0.005,0.5,0.995), size=n_ranks,prob  =  binwidth / 100)
+  lower = CI[1]
+  mean = CI[2]
+  upper = CI[3]
+
+
+  ranks %>% ggplot(aes(x = rank)) +
+    geom_segment(aes(x=0,y=mean,xend=100,yend=mean),colour="grey25") +
+    geom_polygon(data=data.frame(x=c(-10,0,-10,110,100,110,-10),y=c(lower,mean,upper,upper,mean,lower,lower)),aes(x=x,y=y),fill="grey45",color="grey25",alpha=0.5) +
+    geom_histogram(breaks =  seq(1, 101, by = binwidth), closed = "left" ,fill="#A25050",colour="black") +
+    facet_wrap(facet, scales = "free_y") +
+    ggtitle("Posterior ranks of heldout observations")
+
 }
 
 #Functions extract_log_lik and kfold taken from
