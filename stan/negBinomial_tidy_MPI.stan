@@ -1,11 +1,16 @@
 functions{
 
-  	real gamma_meanSd_log_lpdf(vector x_log, real m, real s){
+  	real exp_gamma_meanSd_lpdf(vector x_log, real m_log, real s){
 
       // This function is the  probability of the log gamma function
       // in case you have data that is aleady in log form
 
-      real v = square(s);
+      // real v = square(s);
+      // real a = square(m) / v;
+      // real b = m / v;
+
+      real m = exp(m_log);
+      real v = m + square(m) * s;
       real a = square(m) / v;
       real b = m / v;
 
@@ -16,11 +21,12 @@ functions{
 
   	}
 
-  	real gamma_meanSd_log_rng(real m, real s){
+  	real exp_gamma_meanSd_rng(real a, real b){
   	  // This function takes care of the two prior choice
   	  // without complicating too much the model itself
 
-      real v = square(s);
+      real m = exp(m_log);
+      real v = m + square(m) * s;
       real a = square(m) / v;
       real b = m / v;
 
@@ -136,9 +142,9 @@ transformed parameters {
 model {
 
   // Overall properties of the data
-int i = 1;
+
   //lambda_mu ~ normal(0,2);
-  lambda_sigma ~ normal(0,2);
+  //lambda_sigma ~ normal(0,2);
   //lambda_skew ~ normal(0,2);
 
   //sigma_raw ~ normal(0,1);
@@ -151,7 +157,7 @@ int i = 1;
 
   // Gene-wise properties of the data
   // lambda ~ normal_or_gammaLog(lambda_mu, lambda_sigma, is_prior_asymetric);
-  lambda ~ gamma_meanSd_log(lambda_mu,lambda_sigma);
+  lambda ~ exp_gamma_meanSd(lambda_mu,lambda_sigma);
   sigma_raw ~ normal(sigma_slope * lambda + sigma_intercept,sigma_sigma);
 
 	// Gene-wise properties of the data
