@@ -1,5 +1,32 @@
 functions{
 
+  	real gamma_meanSd_log_lpdf(vector x_log, real m, real s){
+
+      // This function is the  probability of the log gamma function
+      // in case you have data that is aleady in log form
+
+      real v = square(s);
+      real a = square(m) / v;
+      real b = m / v;
+
+  		vector[rows(x_log)] jacob = x_log; //jacobian
+  		real norm_constant = a * log(b) -lgamma(a);
+  		real a_minus_1 = a-1;
+  		return sum( jacob ) + norm_constant * rows(x_log) + sum(  x_log * a_minus_1 - exp(x_log) * b ) ;
+
+  	}
+
+  	real gamma_meanSd_log_rng(real m, real s){
+  	  // This function takes care of the two prior choice
+  	  // without complicating too much the model itself
+
+      real v = square(s);
+      real a = square(m) / v;
+      real b = m / v;
+
+  	  return log(gamma_rng(a, b));
+  	}
+
 	 vector lp_reduce( vector global_parameters , vector local_parameters , real[] xr , int[] xi ) {
 	 	int M = xi[1];
 	 	int N = xi[2];
@@ -61,12 +88,13 @@ transformed data {
   int_MPI[i,] = append_array(append_array(append_array(M_N_Gps, symbol_end[i]), sample_idx[i]), counts[i]);
 
   }
+
 }
 parameters {
   // Overall properties of the data
-  real lambda_mu; // So is compatible with logGamma prior
+  real<lower=0> lambda_mu; // So is compatible with logGamma prior
   real<lower=0> lambda_sigma;
-  real lambda_skew;
+  //real lambda_skew;
   vector[S] exposure_rate;
 
   // Gene-wise properties of the data
@@ -109,9 +137,9 @@ model {
 
   // Overall properties of the data
 int i = 1;
-  lambda_mu ~ normal(0,2);
+  //lambda_mu ~ normal(0,2);
   lambda_sigma ~ normal(0,2);
-  lambda_skew ~ normal(0,2);
+  //lambda_skew ~ normal(0,2);
 
   //sigma_raw ~ normal(0,1);
   exposure_rate ~ normal(0,1);
@@ -123,7 +151,7 @@ int i = 1;
 
   // Gene-wise properties of the data
   // lambda ~ normal_or_gammaLog(lambda_mu, lambda_sigma, is_prior_asymetric);
-  lambda ~  skew_normal(lambda_mu,lambda_sigma, lambda_skew);
+  lambda ~ gamma_meanSd_log(lambda_mu,lambda_sigma);
   sigma_raw ~ normal(sigma_slope * lambda + sigma_intercept,sigma_sigma);
 
 	// Gene-wise properties of the data
@@ -135,7 +163,7 @@ generated quantities{
   vector[G] lambda_gen;
 
   for(g in 1:G) sigma_raw_gen[g] = normal_rng(sigma_slope * lambda[g] + sigma_intercept,sigma_sigma);
-  for(g in 1:G) lambda_gen[g] =  skew_normal_rng(lambda_mu,lambda_sigma, lambda_skew);
+  for(g in 1:G) lambda_gen[g] =  gamma_meanSd_log_rng(lambda_mu,lambda_sigma);
 
 
 }
