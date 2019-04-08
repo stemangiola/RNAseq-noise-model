@@ -21,9 +21,9 @@ data{
 
 }
 parameters{
-  real<lower=-0.5, upper=0.5> gamma;
-  real<lower=0, upper=0.5> alpha;
-  real<lower=0, upper=0.5> epsilon;
+  real gamma;
+  real<lower=0> alpha;
+  real<lower=0> epsilon;
 }
 model {
 gamma ~ normal(0,1);
@@ -32,9 +32,9 @@ epsilon ~ normal(0,1);
 
 // //nu ~ student_t(3, 0, 1);
 // sigma ~ student_t(3, 0, 10);
-print(gamma, " " , alpha, " " , epsilon);
-for(i in 1:N) print(sichel_lpmf(y[i] | gamma, alpha , epsilon));
-//for(i in 1:N) y[i] ~ sichel(gamma, alpha , epsilon);
+//print(gamma, " " , alpha, " " , epsilon);
+//for(i in 1:N) print(sichel_lpmf(y[i] | gamma, alpha , epsilon));
+for(i in 1:N) y[i] ~ sichel(gamma, alpha , epsilon);
 
 
 //  print(sichel_lpmf(x | -30.0, 10.0 , 0.1));
