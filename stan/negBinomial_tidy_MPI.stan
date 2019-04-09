@@ -21,7 +21,7 @@ functions{
 
   	}
 
-  	real exp_gamma_meanSd_rng(real a, real b){
+  	real exp_gamma_meanSd_rng(real m_log, real s){
   	  // This function takes care of the two prior choice
   	  // without complicating too much the model itself
 
@@ -169,7 +169,7 @@ generated quantities{
   vector[G] lambda_gen;
 
   for(g in 1:G) sigma_raw_gen[g] = normal_rng(sigma_slope * lambda[g] + sigma_intercept,sigma_sigma);
-  for(g in 1:G) lambda_gen[g] =  gamma_meanSd_log_rng(lambda_mu,lambda_sigma);
+  for(g in 1:G) lambda_gen[g] =  exp_gamma_meanSd_rng(lambda_mu,lambda_sigma);
 
 
 }
