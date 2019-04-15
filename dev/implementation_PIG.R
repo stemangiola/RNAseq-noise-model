@@ -677,7 +677,7 @@ rstan::sampling(
   chains=1, iter=400, cores=4
 ) %>% traceplot
 
-zhuprobs_log = function(n, a, b, c, tol_log){
+zhuprobs_log = function(n, a, b, c){
   res_log = c()
   nbreak=n+1
   if(a==0) res_log[1] = B* log((1-c))
@@ -686,84 +686,34 @@ zhuprobs_log = function(n, a, b, c, tol_log){
   if(n!=0){
     aux_log = log(b)+log(c);
     r_log = c()
-    #r = (double *)malloc((n)*sizeof(double));
-    r_log[1] = log(1-a)+log(c);
-    for(i in 1:(n-1)) r_log[i+1] = log(c)+r_log[i]+log(i-1+a)-log(i+1);
-
     res_log[2] = aux_log+res_log[1];
 
-    for(i in 1:(n-1)){
-      res_log[i+1+1] = aux_log+res_log[i+1];
-      for(j in 1:i)
-        res_log[i+1+1] = matrixStats::logSumExp(c( res_log[i+1+1] , log(j)+r_log[i-j+1]+res_log[j+1]) );
-      res_log[i+1+1] = res_log[i+1+1] - log(i+1);
-      if((tol_log>1)&&(res_log[i+1+1]<=tol_log)&&(res_log[i+1+1]<res_log[i+1])){
-        nbreak = i;
-        break;
+    if(n > 1){
+      r_log[1] = log(1-a)+log(c);
+      for(i in 1:(n-1)) r_log[i+1] = log(c)+r_log[i]+log(i-1+a)-log(i+1);
+
+      for(i in 1:(n-1)){
+        res_log[i+1+1] = aux_log+res_log[i+1];
+        for(j in 1:i) res_log[i+1+1] = matrixStats::logSumExp(c( res_log[i+1+1] , log(j)+r_log[i-j+1]+res_log[j+1]) );
+        res_log[i+1+1] = res_log[i+1+1] - log(i+1);
       }
     }
-
-    if(nbreak <= n)
-      for(i in (nbreak+1):n)
-        res[i+1] = -Inf;
-    #free(r);
   }
 
   res_log
 }
 
- zhuprobs = function(n, a, b, c, tol){
-  res = c()
-  nbreak=n+1
-  if(a==0) res[1] = ((1-c)^b)
-  else res[1] = exp((b)*(((1-c)^a)-1)/(a));
-
-  if(n!=0){
-    aux = b*c;
-    r = c()
-    #r = (double *)malloc((n)*sizeof(double));
-    r[1] = (1-a)*(c);
-    for(i in 1:(n-1)) r[i+1] = (c)*r[i]*(i-1+a)/(i+1);
-
-    res[2] = aux*res[1];
-
-    for(i in 1:(n-1)){
-      res[i+1+1] = aux*res[i+1];
-      for(j in 1:i)
-        res[i+1+1] = res[i+1+1] + j*r[i-j+1]*res[j+1];
-        res[i+1+1] = res[i+1+1] / (i+1);
-        if((tol>0)&&(res[i+1+1]<=tol)&&(res[i+1+1]<res[i+1])){
-          nbreak = i;
-          break;
-        }
-    }
-
-  if(nbreak <= n)
-    for(i in (nbreak+1):n)
-      res[i+1] = 0;
-    #free(r);
-  }
-
- res
-}
-
- my_dPT = function (x, mu, D, a, tol = 1e-15)
+my_dPT = function (x, mu, D, a, tol = 1e-15)
  {
 
    a <- a
    b <- (mu * (1 - a)^(1 - a))/((D - 1) * (D - a)^(-a))
    c <- (D - 1)/(D - a)
-   obs <- x
 
-   x.t <- table(obs)
-   x.unique <- as.numeric(names(x.t))
-   mm <- max(x.unique)
-   if (a == 0) prx <- dnbinom(0:mm, mu = mu, size = b) %>% log
-   else if (a == 1) prx <- dpois(0:mm, b) %>% log
-   else prx <- zhuprobs_log(as.integer(mm), a, b, c, tol)
+   zhuprobs_log(x %>% max %>% as.integer, a, b, c, tol) %>%
+     as.array %>%
+     `[` (x + 1)
 
-   res <- prx[obs + 1]
-   res
  }
 
 
@@ -779,7 +729,7 @@ zhuprobs_log = function(n, a, b, c, tol_log){
  list(
 
    # Plot 1
-   foreach(nu=seq(0.1, 0.9, 0.1), .combine = bind_rows) %dopar% {
+   foreach(nu=seq(0, 1, 0.1), .combine = bind_rows) %dopar% {
 
      tibble(
        nu = nu,
@@ -802,6 +752,16 @@ zhuprobs_log = function(n, a, b, c, tol_log){
  ) %>% gridExtra::grid.arrange(grobs=.)
 
 
+library(rstan); library(tidyverse)
+ tweedie_model =
+   rstan::stan_model(
+     sprintf("stan/%s.stan", "poisson_tweedie")
+   )
 
+ rstan::sampling(
+   tweedie_model,
+   data = list(N=100, y= tweeDEseq::rPT(100, mu= 100, D=5, a=0.95, max=10000)),
+   chains=3, iter=400, cores=4
+ ) %>% traceplot
 
 
