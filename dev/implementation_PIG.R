@@ -369,6 +369,11 @@ besselK(30, 1000) %>% log
  actuar::dpoisinvgauss(100, 100, 0.01, log =  T)
 my_dpoisinvgauss(500, 100, 1/2000)
 
+
+
+
+###################################
+###################################
 tbl =
   seq(0,1000, 10) %>%
   tibble(
@@ -379,13 +384,14 @@ tbl =
     `dnbinom` = sapply(. , dnbinom,mu= 100, size=15)%>% log,
     `dSICHEL` = sapply(. , gamlss.dist::dSICHEL,mu= 100, sigma=0.1, nu=-30, log=T),
     `dSICHEL2` = sapply(. , gamlss.dist::dSICHEL,mu= 100, sigma=0.1, nu=30, log=T),
+    `poisson_tweedie` = sapply(. , tweeDEseq::dPT,mu= 100, D=15/2, a=0.5) %>% log,
     dnorm = sapply(. ,  metRology::dt.scaled, df = 40, mean=100, sd=50) %>% log ,
     `dt.scaled` = sapply(x , dnorm,mean= 100, 50)%>% log
   ) %>%
   gather(model, `log density`, -x)
 
 tbl  %>%
-  dplyr::filter(model %in% c("dpoisinvgauss", "dpoisinvgauss + stable besselK")) %>%
+  dplyr::filter(model %in% c("dpoisinvgauss", "dpoisinvgauss + stable besselK", "poisson_tweedie")) %>%
   ggplot(aes(x = x, y=`log density`, color = model)) + geom_point() + facet_grid(~model) + my_theme +
   ggtitle("sapply(seq(0,1000, 10) , actuar::dpoisinvgauss, 100, 2000, log=T)")
 
@@ -393,7 +399,7 @@ tbl  %>%
   dplyr::filter(model != "dpoisinvgauss") %>%
   dplyr::mutate(
     Type = ifelse(
-      model %in% c("dpoisinvgauss", "dpoisinvgauss + stable besselK", "dnbinom", "dSICHEL", "dPIG"),
+      model %in% c("dpoisinvgauss", "dpoisinvgauss + stable besselK", "dnbinom", "dSICHEL", "dPIG", "poisson_tweedie"),
       "Discrete",
       "Continuous"
     )
@@ -583,6 +589,9 @@ my_tofySICHEL2 = function(y, mu, sigma, nu, lbes, cvec, ans, ny, maxy) {
 
 gamlss.dist::dSICHEL(10, 10, 0.1, -30, log = T)
 
+fileConn<-file("~/.R/Makevars")
+writeLines(c("CXX14FLAGS += -O3",  "CXX14FLAGS += -fPIC"), fileConn)
+close(fileConn)
 SICHEL_model =
   rstan::stan_model(
     here::here("stan",sprintf("%s.stan", "poisson_GIG")),
@@ -595,7 +604,13 @@ fit_sichel = rstan::sampling(
   chains=3, iter=1000, warmup=800, cores=4
 )
 
+r = function(v, z){
+  besselK(v+1, z) / besselK(v, z)
+}
 
+mean_sichel = function(epsilon, gamma, w){
+  epsilon * r(gamma, w)
+}
 
 
 detach("package:gamlss.dist", unload=TRUE)
@@ -662,3 +677,101 @@ rstan::sampling(
   chains=1, iter=400, cores=4
 ) %>% traceplot
 
+zhuprobs_log = function(n, a, b, c, tol_log){
+  res_log = c()
+  nbreak=n+1
+  if(a==0) res_log[1] = B* log((1-c))
+  else res_log[1] = ((b)*(((1-c)^a)-1)/(a));
+
+  if(n!=0){
+    aux_log = log(b)+log(c);
+    r_log = c()
+    #r = (double *)malloc((n)*sizeof(double));
+    r_log[1] = log(1-a)+log(c);
+    for(i in 1:(n-1)) r_log[i+1] = log(c)+r_log[i]+log(i-1+a)-log(i+1);
+
+    res_log[2] = aux_log+res_log[1];
+
+    for(i in 1:(n-1)){
+      res_log[i+1+1] = aux_log+res_log[i+1];
+      for(j in 1:i)
+        res_log[i+1+1] = matrixStats::logSumExp(c( res_log[i+1+1] , log(j)+r_log[i-j+1]+res_log[j+1]) );
+      res_log[i+1+1] = res_log[i+1+1] - log(i+1);
+      if((tol_log>1)&&(res_log[i+1+1]<=tol_log)&&(res_log[i+1+1]<res_log[i+1])){
+        nbreak = i;
+        break;
+      }
+    }
+
+    if(nbreak <= n)
+      for(i in (nbreak+1):n)
+        res[i+1] = -Inf;
+    #free(r);
+  }
+
+  res_log
+}
+
+ zhuprobs = function(n, a, b, c, tol){
+  res = c()
+  nbreak=n+1
+  if(a==0) res[1] = ((1-c)^b)
+  else res[1] = exp((b)*(((1-c)^a)-1)/(a));
+
+  if(n!=0){
+    aux = b*c;
+    r = c()
+    #r = (double *)malloc((n)*sizeof(double));
+    r[1] = (1-a)*(c);
+    for(i in 1:(n-1)) r[i+1] = (c)*r[i]*(i-1+a)/(i+1);
+
+    res[2] = aux*res[1];
+
+    for(i in 1:(n-1)){
+      res[i+1+1] = aux*res[i+1];
+      for(j in 1:i)
+        res[i+1+1] = res[i+1+1] + j*r[i-j+1]*res[j+1];
+        res[i+1+1] = res[i+1+1] / (i+1);
+        if((tol>0)&&(res[i+1+1]<=tol)&&(res[i+1+1]<res[i+1])){
+          nbreak = i;
+          break;
+        }
+    }
+
+  if(nbreak <= n)
+    for(i in (nbreak+1):n)
+      res[i+1] = 0;
+    #free(r);
+  }
+
+ res
+}
+
+ my_dPT = function (x, mu, D, a, tol = 1e-15)
+ {
+
+   a <- a
+   b <- (mu * (1 - a)^(1 - a))/((D - 1) * (D - a)^(-a))
+   c <- (D - 1)/(D - a)
+   obs <- x
+
+   x.t <- table(obs)
+   x.unique <- as.numeric(names(x.t))
+   mm <- max(x.unique)
+   if (a == 0) prx <- dnbinom(0:mm, mu = mu, size = b) %>% log
+   else if (a == 1) prx <- dpois(0:mm, b) %>% log
+   else prx <- zhuprobs_log(as.integer(mm), a, b, c, tol)
+
+   res <- prx[obs + 1]
+   res
+ }
+
+
+ .Call("zhuprobs", as.integer(1.000000e+02), 5.000000e-01, 2.878198e+01 ,9.285714e-01, 1.000000e-15)
+ zhuprobs (1.000000e+02, 5.000000e-01, 2.878198e+01 ,9.285714e-01, 1.000000e-15) %>% log
+ zhuprobs_log (1.000000e+02, 5.000000e-01, 2.878198e+01 ,9.285714e-01, log(1.000000e-15))
+
+
+
+ tweeDEseq::dPT(100, mu= 100, D=15/2, a=0.5) %>% log
+ my_dPT(100, mu= 100, D=15/2, a=0.5)
