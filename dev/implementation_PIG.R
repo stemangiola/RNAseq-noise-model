@@ -643,7 +643,7 @@ foreach(nu=seq(-30, 30, 5), .combine = bind_rows) %dopar% {
     x = seq(0,1000, 10)
   )
 }  %>%
-ggplot(aes(x = x, y=ld, color = nu)) + geom_point(alpha=0.5) + facet_wrap(~nu) + my_theme
+ggplot(aes(x = x, y=ld, color = nu)) + geom_point(alpha=0.5)  + my_theme
 
 
 foreach(nu=seq(0, 30, 2), .combine = bind_rows) %dopar% {
@@ -775,3 +775,33 @@ zhuprobs_log = function(n, a, b, c, tol_log){
 
  tweeDEseq::dPT(100, mu= 100, D=15/2, a=0.5) %>% log
  my_dPT(100, mu= 100, D=15/2, a=0.5)
+
+ list(
+
+   # Plot 1
+   foreach(nu=seq(0.1, 0.9, 0.1), .combine = bind_rows) %dopar% {
+
+     tibble(
+       nu = nu,
+       ld = sapply(seq(0,1000, 10) , tweeDEseq::dPT,mu= 100, D=5, a=nu, tol = 1e-100) %>% log,
+       x = seq(0,1000, 10)
+     )
+   }  %>%
+     ggplot(aes(x = x, y=ld, color = nu)) + geom_point(alpha=0.5)  + my_theme + ggtitle("tail"),
+
+   # Plot 2
+   foreach(D=seq(1, 15, 1), .combine = bind_rows) %dopar% {
+
+     tibble(
+       D = D,
+       ld = sapply(seq(0,1000, 10) , tweeDEseq::dPT,mu= 100, D=D, a=0.5, tol = 1e-100) %>% log,
+       x = seq(0,1000, 10)
+     )
+   } %>%
+     ggplot(aes(x = x, y=ld, color = D)) + geom_point(alpha=0.5)  + my_theme + ggtitle("Overdispersion")
+ ) %>% gridExtra::grid.arrange(grobs=.)
+
+
+
+
+
