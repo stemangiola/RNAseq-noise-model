@@ -38,15 +38,15 @@ functions {
     vector[2 * G] solver_params = append_row(log_mus, phis);
 
     // ==== Unvectorized use of solver
-    // vector[N] s_vec_raw;
-    // vector[1] solver_guess = to_vector({0});
-    // for(n in 1:N) {
-    //   s_vec_raw[n] = algebra_solver(nb_sum_log_Kd_eq, solver_guess, solver_params, dummy_x_r,  {sum_y[n]})[1];
-    // }
+    vector[N] s_vec_raw;
+    vector[1] solver_guess = to_vector({0});
+    for(n in 1:N) {
+      s_vec_raw[n] = algebra_solver(nb_sum_log_Kd_eq, solver_guess, solver_params, dummy_x_r,  {sum_y[n]})[1];
+    }
 
     // ==== Vectorized use of solver, seems a tiny bit faster, but maybe problematic for large N
-    vector[N] solver_guess = rep_vector(0, N);
-    vector[N] s_vec_raw = algebra_solver(nb_sum_log_Kd_eq, solver_guess, solver_params, dummy_x_r,  sum_y);
+    // vector[N] solver_guess = rep_vector(0, N);
+    // vector[N] s_vec_raw = algebra_solver(nb_sum_log_Kd_eq, solver_guess, solver_params, dummy_x_r,  sum_y);
 
     {
       vector[N] s = s_transform(s_vec_raw, mus, phis);
