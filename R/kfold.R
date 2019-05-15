@@ -102,6 +102,19 @@ extract_holdout_ranks <- function(list_of_stanfits, list_of_holdout, base_data) 
   holdout_ranks
 }
 
+extract_holdout_ranks_all <- function(kfold_def, kfold_res) {
+  kfold_def$model_defs$id %>% map(function(id) {
+    indices = kfold_def$model_defs_kfold$id == id
+    fits_for_model <- kfold_res$fits[indices]
+    holdout_for_model <- lapply(kfold_def$data_list[indices], '[[', "holdout")
+    extract_holdout_ranks(fits_for_model, holdout_for_model, kfold_def$base_data) %>%
+      as.tibble() %>%
+      rownames_to_column("sample") %>%
+      gather("gene","rank", - sample) %>%
+      mutate(model =  kfold_def$model_defs$model_name[kfold_def$model_defs$id == id])
+  }) %>% do.call(rbind, args = .)
+}
+
 plot_holdout_ranks <- function(ranks, binwidth = 1, facet = ~ model) {
   if(100 %% binwidth != 0) {
     stop("binwidth has to divide 100")

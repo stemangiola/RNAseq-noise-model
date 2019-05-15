@@ -89,7 +89,6 @@ generated quantities{
 
   vector[G_gen] lambda_gen;
   vector[N_log_lik] log_lik;
-  vector[N_log_lik] log_lik_sampled;
 
   if(generate_quantities) {
     // Sample gene wise rates
@@ -123,10 +122,6 @@ generated quantities{
     //log_lik for LOO
   if(generate_log_lik) {
     vector[G] gamma_rate_gen = phi ./ exp(lambda);
-    for(n in 1:N) {
-      log_lik[n] = multinomial_lpmf(counts[n,] | to_vector(theta[n,]) / sum(theta[n,]));
-    }
-
     {
       for(n in 1:N) {
         vector[N_samples_log_lik] log_lik_samp;
@@ -137,7 +132,7 @@ generated quantities{
           }
           log_lik_samp[s] = multinomial_lpmf(counts[n,] | gamma_samp / sum(gamma_samp));
         }
-        log_lik_sampled[n] = log_sum_exp(log_lik_samp) - log(N_samples_log_lik);
+        log_lik[n] = log_sum_exp(log_lik_samp) - log(N_samples_log_lik);
       }
     }
   }

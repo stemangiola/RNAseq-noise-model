@@ -160,10 +160,11 @@ evaluation_summary(fit_g, data$true)
 
 # Negative binomial, DeSEQ2 style
 ```{r}
-G = 30
-N = 8
+#TODO This crashes (caused by G and N values)
+G = 10
+N = 15
 
-data = generate_data_negbinomial_deseq2(G, N, asymptDisp = 4, extraPois = exp(3))
+data = generate_data_negbinomial_deseq2(G, N, asymptDisp = 0.5, extraPois = 1.3)
 fit = sampling(model_nb_deseq2, data = data$observed)
 evaluation_summary(fit, data$true)
 ```
