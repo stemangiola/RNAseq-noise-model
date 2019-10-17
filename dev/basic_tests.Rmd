@@ -16,6 +16,7 @@ library(tidyverse)
 
 ```{r compile_models}
 model_dirichlet_multinomial = stan_model(here("stan","dirichlet_multinomial_base.stan"))
+model_generalized_dirichlet_multinomial = stan_model(here("stan","generalized_dirichlet_multinomial.stan"))
 model_multinomial = stan_model(here("stan","multinomial.stan"))
 model_lognormal_multinomial = stan_model(here("stan","logNormal_multinomial.stan"))
 model_nb_multinomial_approx = stan_model(here("stan","nb_multinomial_approx.stan"))
@@ -92,13 +93,92 @@ fit = sampling(model_gamma_multinomial, data = data$observed)
 evaluation_summary(fit, data$true)
 ```
 
+# Gamma multinomial 2
+
+```{r}
+model_gamma_multinomial_2 = stan_model(here("stan","gamma_multinomial_2.stan"))
+```
+
+```{r}
+G = 5
+N = 10
+sums = G * 10 + rnbinom(N, mu = G * 50, size = 1) 
+
+data = generate_data_gamma_multinomial_2(G, sums, asymptDisp = 0.5, extraPois = 1.3)
+data$observed$N_samples_log_lik <- 1
+fit = sampling(model_gamma_multinomial_2, data = data$observed, control = list(adapt_delta = 0.99))
+evaluation_summary(fit, data$true)
+```
+
+# Gamma multinomial - NB approx
+
+```{r}
+model_gamma_multinomial_2_nb = stan_model(here("stan","gamma_multinomial_2_nb.stan"))
+```
+
+```{r}
+G = 15
+N = 10
+sums = G * 10 + rnbinom(N, mu = G * 50, size = 1) 
+
+data = generate_data_gamma_multinomial_2(G, sums, asymptDisp = 0.5, extraPois = 1.3)
+fit = sampling(model_gamma_multinomial_2_nb, data = data$observed, control = list(adapt_delta = 0.99))
+evaluation_summary(fit, data$true)
+
+data$observed$N_samples_log_lik <- 1
+data$observed$generate_log_lik = 0
+fit_g = sampling(model_gamma_multinomial, data = data$observed, control = list(adapt_delta = 0.99))
+evaluation_summary(fit_g, data$true)
+```
+
+```{r}
+model_dirichlet_multinomial = stan_model(here("stan","dirichlet_multinomial_base.stan"))
+
+```
+
+
+```{r}
+G = 10
+N = 6
+sums = G * 10 + rnbinom(N, mu = G * 50, size = 1) 
+data <- generate_data_dirichlet_multinomial_base(G, sums, lambda_raw_prior = 2)
+
+data$observed$variant = 0
+fit_d <- sampling(model_dirichlet_multinomial, data = data$observed, control = list(adapt_delta = 0.99))
+evaluation_summary(fit_d, data$true)
+
+data$observed$variant = 1
+fit_n <- sampling(model_dirichlet_multinomial, data = data$observed, control = list(adapt_delta = 0.99))
+evaluation_summary(fit_n, data$true)
+
+data$observed$variant = 2
+fit_g <- sampling(model_dirichlet_multinomial, data = data$observed, control = list(adapt_delta = 0.99))
+evaluation_summary(fit_g, data$true)
+
+```
+
+
 # Negative binomial, DeSEQ2 style
 ```{r}
-G = 30
-N = 8
+#TODO This crashes (caused by G and N values)
+G = 10
+N = 15
 
-data = generate_data_negbinomial_deseq2(G, N, asymptDisp = 4, extraPois = exp(3))
+data = generate_data_negbinomial_deseq2(G, N, asymptDisp = 0.5, extraPois = 1.3)
 fit = sampling(model_nb_deseq2, data = data$observed)
 evaluation_summary(fit, data$true)
+```
+
+#Generalized dirichlet multinom
+
+```{r}
+G = 4
+N = 3
+sums = G * 10 + rnbinom(N, mu = G * 50, size = 1) 
+
+#Right now, I don't have direct simulator
+data = generate_data_gamma_multinomial(G, sums)
+fit = sampling(model_generalized_dirichlet_multinomial, data = data$observed)
+fit
 ```
 

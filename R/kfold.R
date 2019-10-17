@@ -31,6 +31,7 @@ prepare_kfold <- function(K, model_defs, base_data, seed = NULL) {
   }
 
   list(
+    base_data = base_data,
     data_list = data_list,
     control_list = list,
     model_defs = model_defs,
@@ -71,7 +72,75 @@ run_kfold <- function(kfold_def, name_for_cache) {
   )
 }
 
+extract_holdout_ranks <- function(list_of_stanfits, list_of_holdout, base_data) {
+  K <- length(list_of_stanfits)
+  N_samples <- 100
+  all_genes_holdout_gen <- array(NA_real_, c(N_samples, base_data$N, base_data$G))
+  for(i in 1:K) {
+    counts_gen <- rstan::extract(list_of_stanfits[[i]], pars = "counts_gen_geneWise")$counts_gen_geneWise
+    holdout <- list_of_holdout[[i]]
+    # I should better get samples at fixed steps, but ignoring for now
+    samples_to_use <- sample(1:(dim(counts_gen)[1]), N_samples)
+    all_genes_holdout_gen[, holdout, ] <- counts_gen[samples_to_use, holdout, ]
+  }
+  if(any(is.na(counts_gen))) {
+    stop("Inconsistent holdout data")
+  }
 
+  holdout_ranks_less <- sweep(all_genes_holdout_gen, MARGIN = c(2,3), STATS = base_data$counts, FUN = "<") %>%
+    apply(MARGIN = c(2,3), FUN = sum)
+
+  holdout_ranks_equal <- sweep(all_genes_holdout_gen, MARGIN = c(2,3), STATS = base_data$counts, FUN = "==") %>%
+    apply(MARGIN = c(2,3), FUN = sum)
+
+  #If there are equal values, sample the rank randomly over the equal values
+  #Using a trich with rounded uniform random numbers to get that in a vectorized way
+  holdout_ranks = holdout_ranks_less +
+    round((holdout_ranks_equal + 1) * array(runif(length(holdout_ranks_equal)), dim(holdout_ranks_equal)) - 0.5)
+
+  dimnames(holdout_ranks) <- dimnames(base_data$counts)
+  holdout_ranks
+}
+
+extract_holdout_ranks_all <- function(kfold_def, kfold_res) {
+  kfold_def$model_defs$id %>% map(function(id) {
+    indices = kfold_def$model_defs_kfold$id == id
+    fits_for_model <- kfold_res$fits[indices]
+    holdout_for_model <- lapply(kfold_def$data_list[indices], '[[', "holdout")
+    extract_holdout_ranks(fits_for_model, holdout_for_model, kfold_def$base_data) %>%
+      as.tibble() %>%
+      rownames_to_column("sample") %>%
+      gather("gene","rank", - sample) %>%
+      mutate(model =  kfold_def$model_defs$model_name[kfold_def$model_defs$id == id])
+  }) %>% do.call(rbind, args = .)
+}
+
+plot_holdout_ranks <- function(ranks, binwidth = 1, facet = ~ model) {
+  if(100 %% binwidth != 0) {
+    stop("binwidth has to divide 100")
+  }
+
+  n_ranks <- aggregate(update.formula(facet, rank ~ .) , ranks, length)
+  if(length(unique(n_ranks$rank)) != 1) {
+    stop("Unequal number of observations per group")
+  }
+
+  n_ranks <- n_ranks$rank[1]
+
+  CI = qbinom(c(0.005,0.5,0.995), size=n_ranks,prob  =  binwidth / 100)
+  lower = CI[1]
+  mean = CI[2]
+  upper = CI[3]
+
+
+  ranks %>% ggplot(aes(x = rank)) +
+    geom_segment(aes(x=0,y=mean,xend=100,yend=mean),colour="grey25") +
+    geom_polygon(data=data.frame(x=c(-10,0,-10,110,100,110,-10),y=c(lower,mean,upper,upper,mean,lower,lower)),aes(x=x,y=y),fill="grey45",color="grey25",alpha=0.5) +
+    geom_histogram(breaks =  seq(1, 101, by = binwidth), closed = "left" ,fill="#A25050",colour="black") +
+    facet_wrap(facet, scales = "free_y") +
+    ggtitle("Posterior ranks of heldout observations")
+
+}
 
 #Functions extract_log_lik and kfold taken from
 #https://github.com/stan-dev/stancon_talks/blob/master/2017/Contributed-Talks/07_nicenboim/kfold.Rmd

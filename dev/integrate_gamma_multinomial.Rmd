@@ -4,86 +4,298 @@ output: html_notebook
 ---
 ```{r setup}
 library(tidyverse)
+library(here)
 devtools::load_all()
+source(here("dev","gamma_multinomial_helpers.R"))
+```
+
+
+# Brute forcing the integral
+
+
+
+# Approximating with ratio of NBs 
+
+```{r}
+log_gamma_multinomial_approx_nb <- function(y, mus, phis) {
+  phi_bar <- sum(mus)^2 / sum(mus ^ 2 / phis)
+  #phi_bar <- sum(mus)^2 / sum(alpha / beta ^ 2)
+  lgamma(sum(y) + 1) - lgamma(sum(y) + phi_bar) + sum(lgamma(y + phis) - lgamma(y + 1)) + 
+    (sum(y) + phi_bar) * log(sum(mus) + phi_bar) - sum(y) * log(sum(mus)) +
+    sum(y * log(mus) - (y + phis) * log(mus + phis)) +
+    lgamma(phi_bar) - sum(lgamma(phis)) +
+    sum(phis * log(phis)) - phi_bar * log(phi_bar)
+}
 ```
 
 
 ```{r}
-phi = 2
-lambda = c(1, 0.2)
-res = c(20,10)
-tibble(theta1 = seq(0.01, 5, length.out = 100)) %>% crossing(theta2 = seq(0.01, 5, length.out = 100)) %>%
-  mutate(density = dgamma(theta1,shape = phi, rate = phi) * dgamma(theta2,shape = phi, rate = phi)) %>%
-  rowwise() %>% mutate(density = density * dmultinom(res, prob = c(theta1, theta2) * lambda)) %>%
-  ungroup() %>%
-  ggplot(aes(x = theta1, y = theta2, fill = density)) + geom_raster() + scale_fill_distiller(palette = "Spectral")
+N = 2
+alpha = c(1,1)#rlnorm(N, 3, 6)
+beta = c(4,5) * 1e-6#rlnorm(N,2, 5)
+y = c(2, 3)#runif(N, 0, 2 * alpha/beta)
+
+#log_ddirichlet_multinom(y, alpha)
+log_gamma_multinomial_approx_nb(y, alpha, beta)
+plot_integral_approx(1e6, phi = alpha, lambda = log(alpha/beta), res = y)
 ```
 
+
+# Approximating with Taylor expansion
+
+Test how well we approximate Dirichlet-Multinom with the expansion
+
 ```{r}
-log_ddirichlet <- function(x, alpha) {
-  lgamma(sum(alpha)) - sum(lgamma(alpha)) + sum((alpha - 1) * log(x))
+log_gamma_multinomial_approx <- function(y, alpha, beta) {
+  means <- alpha/beta
+  variances <- alpha/(beta^2)
+  moment_3 <- 2 * alpha / (beta^3)
+  
+  dmultinom(y, prob = means / sum(means), log = TRUE) + 
+    0.5 * sum(variances * (-y/(means ^ 2) + sum(y)/(sum(means) ^ 2))) +
+    (1/6) * sum(moment_3 * (2 * y / (means ^ 3) - 2 * sum(y) / (sum(means) ^ 3)))
+}
+```
+
+
+```{r}
+log_gamma_multinomial_approx2 <- function(y, alpha, beta) {
+  means <- digamma(alpha)  - log(beta)
+  variances <- trigamma(alpha)
+  #moment_3 <- 2 * alpha / (beta^3)
+  
+  dmultinom(y, prob = softmax(means), log = TRUE) + 
+    0.5 * sum(variances * (softmax(means) * (softmax(means) - 1))) #+
+    #(1/6) * sum(moment_3 * (2 * y / (means ^ 3) - 2 * sum(y) / (sum(means) ^ 3)))
 }
 
-plot_integral_approx <- function(N, phi, lambda, res) {
-  if(length(phi) != 1) {
-    stop("phi")
-  }
-  imp_sampling <- array(-1, N)
-  simple <- array(-1, N)
-  imp_sampling_log <- array(-1, N)
-  simple_log <- array(-1, N)
+```
+
+
+```{r}
+alpha = c(10, 10)
+beta = c(2, 2)
+y = c(10,10)
+
+log_ddirichlet_multinom(y, alpha)
+log_gamma_multinomial_approx2(y, alpha, beta)
+```
+
+```{r}
+y = c(500,500)
+tibble(p1 = seq(0.01,5, length.out = 100)) %>% crossing(tibble(p2 = seq(0.01,5, length.out = 100))) %>%
+  rowwise() %>%
+  mutate(prob = dmultinom(y, prob = c(p1,p2), log = TRUE) + dgamma(p1, 1, 1,log = TRUE) + dgamma(p2, 3, 6, log = TRUE)) %>%
+  ggplot(aes(x = p1, y = p2, fill = prob)) + geom_raster() + scale_fill_distiller(palette = "Spectral")
+```
+```{r}
+y = c(0,15)
+tibble(p1 = seq(-10,2, length.out = 100)) %>% 
+  crossing(tibble(p2 = seq(-10,2, length.out = 100))) %>%
+  rowwise() %>%
+  mutate(prob = dmultinom(y, prob = exp(c(p1,p2))) * dgamma(exp(p1), 1, 10) * dgamma(exp(p2), 1.99, 0.1)) %>%
+  ggplot(aes(x = p1, y = p2, fill = prob)) + geom_raster() + scale_fill_distiller(palette = "Spectral")
+
+```
+
+```{r}
+y = c(5000,10)
+tibble(p1 = seq(-10,10, length.out = 100)) %>% 
+  crossing(tibble(p2 = seq(-10,10, length.out = 100))) %>%
+  rowwise() %>%
+  mutate(prob = dmultinom(y, prob = exp(c(p1,p2))) * dnorm(p1, -1, 3) * dnorm(p2, -2, 4)) %>%
+  ggplot(aes(x = p1, y = p2, fill = prob)) + geom_raster() + scale_fill_distiller(palette = "Spectral")
+
+```
+
+
+
+```{r}
+# log_multinomial_taylor <- function(y, alpha, order) {
+#   center = y / sum(y)
+#   vals = numeric(order)
+#   vals[1] <- dmultinom(y, prob = center, log = TRUE)
+#   for(i in 2:order) {
+#     vals[i] <- (1/factorial(i)) * (-1)^(i-1) * ()
+#   }
+# }
+# tibble(a1 = )
+```
+
+
+# Testing on dirichlet-multinomial
+
+```{r}
+
+
+plot_dm_integral_approx <- function(N, alpha, res) {
+  dirichlet_samples <- MCMCpack::rdirichlet(N, alpha)
+  dm_samples <- apply(dirichlet_samples, MARGIN = 1, FUN = function(x) {dmultinom(res, prob = x, log = TRUE)}) 
+  
   N_steps = min(100, N)
   step_size = floor(N/N_steps)
-  for(n in 1:N) {
-    ## The simple way
-    gamma_samples <- rgamma(length(lambda), phi, phi/exp(lambda))
-    simple[n] <- dmultinom(res, prob = gamma_samples)
-    simple_log[n] <- dmultinom(res, prob = gamma_samples, log = TRUE)
 
-    ## Importance sampling
-    proposal_normalized <- MCMCpack::rdirichlet(1, res + 0.5)[1,]
-    proposal_s <- rgamma(1, length(lambda) * phi, phi) / sum(proposal_normalized / exp(lambda))
-    
-    log_weight <-  lgamma(length(lambda) * phi) + sum(log(proposal_normalized)) -
-      length(lambda) * lgamma(phi) - (length(lambda) - 1) * log(proposal_s) -
-      (length(lambda) * phi - 1) * log(sum(proposal_normalized / exp(lambda))) -
-      log_ddirichlet(proposal_normalized, res + 0.5)
-      #log(MCMCpack::ddirichlet(proposal_normalized, res + 0.5))
-    
-    imp_sampling[n] <- exp(log_weight) * dmultinom(res, prob = proposal_normalized)
-    imp_sampling_log[n] <- log_weight + dmultinom(res, prob = proposal_normalized, log = TRUE)
-    
-  }
-  integral_simple <- array(-1, N_steps)
-  integral_imp_sampling <- array(-1, N_steps)
-  integral_simple_log <- array(-1, N_steps)
-  integral_imp_sampling_log <- array(-1, N_steps)
+  integral_sample <- array(-1, N_steps)
   for(step in 1:N_steps) {
-    integral_simple[step] <- log(mean(simple[1:(step * step_size)]))
-    integral_imp_sampling[step] <- log(mean(imp_sampling[1:(step * step_size)]))
-    integral_simple_log[step] <- logsumexp(simple_log[1:(step * step_size)]) - log(step * step_size)
-    integral_imp_sampling_log[step] <- logsumexp(imp_sampling_log[1:(step * step_size)]) - log(step * step_size)
+    integral_sample[step] <- logsumexp(dm_samples[1:(step * step_size)]) - log(step * step_size)
   }
-  tibble(n = (1:N_steps) * step_size, integral_simple, integral_imp_sampling, integral_simple_log, integral_imp_sampling_log) %>% 
+  
+  true_value <- log_ddirichlet_multinom(res, alpha)
+  
+  tibble(n = (1:N_steps) * step_size, integral_sample) %>% 
     gather("type","value", -n) %>%
-    ggplot(aes(x=n, y = value, color = type)) + geom_line()
+    ggplot(aes(x=n, y = value, color = type)) + geom_line() + geom_hline(yintercept = true_value)
 }
 
-plot_integral_approx_d <- function(N, d) {
+plot_dm_integral_approx_d <- function(N, d) {
   lambda = rnorm(d, 0, 2)
-  plot_integral_approx(N, 
-                       phi = 1 / sqrt(abs(rnorm(1, 0, 1))),
-                       lambda = lambda,
-                       res = rmultinom(1, size = 100 * d, prob = exp(lambda))[,1]
+  plot_dm_integral_approx(N, 
+                       alpha = exp(lambda),
+                       res = rmultinom(1, size = 1 * d, prob = exp(lambda))[,1]
                        )
 }
 
-set.seed(345666)
+set.seed(424565)
+plot_dm_integral_approx_d(1e6, 200)
+```
+
+# Testing gamma-multinomial
+
+```{r}
+# phi = 0.1
+# lambda = c(1, 0.2)
+# res = c(20,0)
+# min_theta = 1e-5
+# max_theta = 5
+
+phi = 2
+lambda = c(1, 0.2)
+res = c(20,10)
+min_theta = 0.01
+max_theta = 5
+
+
+tibble(theta1 = seq(min_theta, max_theta, length.out = 100)) %>% crossing(theta2 = seq(min_theta, max_theta, length.out = 100)) %>%
+  mutate(density = dgamma(theta1,shape = phi, rate = phi) * dgamma(theta2,shape = phi, rate = phi)) %>%
+  rowwise() %>% mutate(density = density * dmultinom(res, prob = c(theta1, theta2) * lambda)) %>%
+  ungroup() %>%
+  ggplot(aes(x = theta1, y = theta2, fill = density)) + geom_raster() + scale_fill_distiller()
+
+tibble(theta1_log = seq(log(min_theta), log(max_theta), length.out = 100)) %>% crossing(theta2_log = seq(log(min_theta), log(max_theta), length.out = 100)) %>%
+  mutate(density = dgamma(exp(theta1_log),shape = phi, rate = phi) * dgamma(exp(theta2_log),shape = phi, rate = phi)) %>%
+  rowwise() %>% mutate(density = density * dmultinom(res, prob = exp(c(theta1_log, theta2_log)) * lambda)) %>%
+  ungroup() %>%
+  ggplot(aes(x = theta1_log, y = theta2_log, fill = density)) + geom_raster() + scale_fill_distiller()
+
+```
+
+```{r}
+set.seed(424565)
 plot_integral_approx_d(10000, 2)
 ```
 ```{r}
-N = 1e6
-plot_integral_approx_d(N, 100)
+N = 1e5
+plot_integral_approx_d(N, 5)
 
 ```
 
+```{r}
+plot_integral_approx(1e5, phi = c(1,2), lambda = c(5, 3), res = c(3,1))
+plot_integral_approx(1e5, phi = c(1,2), lambda = c(50, 30), res = c(3,1))
+```
+
+# Using sum of NBs
+
+```{r}
+#Saddle point approximation, base of R code from https://stats.stackexchange.com/questions/72479/generic-sum-of-gamma-random-variables/137318#137318
+make_cumgenfun  <-  function(mus, phis) {
+      n  <-  length(mus)
+      m <-   length(phis)
+      stopifnot( n == m, mus > 0, phis > 0 )
+      denominator <- function(s) { phis + mus - mus * exp(s) }
+      return( list( mus=mus,  phis=phis, 
+                    K = Vectorize(function(s) {sum(phis * (log(phis) - log(denominator(s)))) }),
+                    Kd = Vectorize(function(s) {sum(phis * mus * exp(s) / denominator(s))}) ,
+                    log_Kd = Vectorize(function(s) {logsumexp(log(phis) + log(mus) +s - log(phis + mus - mus * exp(s)))}) ,
+                    Kdd = Vectorize(function(s) {sum(phis * mus * (phis + mus) * exp(s) / denominator(s)^2)}),
+                    log_Kdd = Vectorize(function(s) {logsumexp(log(phis) + log(mus)  + log(phis + mus) + s - 2 * log(denominator(s)))})
+              ))
+}
+
+solve_speq  <-  function(x, cumgenfun) {
+          # Returns saddle point!
+          mus <- cumgenfun$mus
+          phis <- cumgenfun$phis
+          Kd  <-   cumgenfun$Kd
+          log_Kd  <-   cumgenfun$log_Kd
+          upper = min(-log(mus) + log(mus + phis), log(phis/mus + 1))
+          uniroot(function(s) log_Kd(s)-log(x),lower=-100,
+                  upper = upper - 1e-10, 
+                  extendInt = "upX")$root
+}
+
+make_fhat <-  function(mus,  phis) {
+    cgf1  <-  make_cumgenfun(mus, phis)
+    K  <-  cgf1$K
+    Kd <-  cgf1$Kd
+    Kdd <- cgf1$Kdd
+    # Function finding fhat for one specific x:
+    fhat0  <- function(x) {
+        # Solve saddlepoint equation:
+        s  <-  solve_speq(x, cgf1)
+        # Calculating saddlepoint density value:
+        (1/sqrt(2*pi*Kdd(s)))*exp(K(s)-s*x)
+    }
+    # Returning a vectorized version:
+    return(Vectorize(fhat0))
+} #end make_fhat
+
+make_log_fhat <-  function(mus,  phis) {
+    cgf1  <-  make_cumgenfun(mus, phis)
+    K  <-  cgf1$K
+    log_Kd <-  cgf1$log_Kd
+    log_Kdd <- cgf1$log_Kdd
+    # Function finding fhat for one specific x:
+    fhat0  <- function(x) {
+        # Solve saddlepoint equation:
+        s  <-  solve_speq(x, cgf1)
+        # Calculating saddlepoint density value:
+        -0.5 * (log(2*pi) + log_Kdd(s)) + K(s) - s*x
+    }
+    # Returning a vectorized version:
+    return(Vectorize(fhat0))
+} #end make_fhat
+```
+
+```{r}
+sum_y = 64; log_mus = c(-0.460575,0.460575); phis = c(5.05684,3.13775); s = 0;
+
+cfg1 <- make_cumgenfun(exp(log_mus), phis)
+solve_speq(sum_y, cfg1)
+cfg1$log_Kd(0) - log(sum_y)
+```
+
+```{r}
+log_gamma_multinomial_approx_nb_saddle <- function(y, mus, phis) {
+  sum(dnbinom(y, mu = mus, size = phis, log = TRUE)) - make_log_fhat(mus,phis)(sum(y))
+}
+```
+
+
+```{r}
+# y <- rep(18, 50)
+# mus <- rep(30, 50)
+# phis <- rep(3, 50)
+
+y = c(34,66,80,132,45,34,681)
+mus <- exp(c(-0.24352,0.24352,0.62,1.3,0.81,0.21,-0.18))
+theta <- 6
+phis <- mus / theta
+#phis <- c(8.07465,5.24391)
+
+log_gamma_multinomial_approx_nb_saddle(y, mus, phis)
+log_gamma_multinomial_approx_nb(y, mus, phis)
+alpha <- mus * 1/theta
+log_ddirichlet_multinom(y, alpha)
+#plot_integral_approx(1e6, phi = phis, lambda = log(mus), res = y)
+```
