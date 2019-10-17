@@ -27,6 +27,7 @@ evaluate_single_param_indices <- function(samples, param_name, indices, true_val
     param_name = fullName,
     true_value = true_value,
     median = median(param_samples),
+    mean = mean(param_samples),
     IQR = IQR(param_samples),
     quantile = ecdf(param_samples)(true_value),
     order_within = order_within_samples(true_value, param_samples)

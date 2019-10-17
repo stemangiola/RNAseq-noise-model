@@ -162,14 +162,31 @@ plot_dm_integral_approx_d(1e6, 200)
 # Testing gamma-multinomial
 
 ```{r}
+# phi = 0.1
+# lambda = c(1, 0.2)
+# res = c(20,0)
+# min_theta = 1e-5
+# max_theta = 5
+
 phi = 2
 lambda = c(1, 0.2)
 res = c(20,10)
-tibble(theta1 = seq(0.01, 5, length.out = 100)) %>% crossing(theta2 = seq(0.01, 5, length.out = 100)) %>%
+min_theta = 0.01
+max_theta = 5
+
+
+tibble(theta1 = seq(min_theta, max_theta, length.out = 100)) %>% crossing(theta2 = seq(min_theta, max_theta, length.out = 100)) %>%
   mutate(density = dgamma(theta1,shape = phi, rate = phi) * dgamma(theta2,shape = phi, rate = phi)) %>%
   rowwise() %>% mutate(density = density * dmultinom(res, prob = c(theta1, theta2) * lambda)) %>%
   ungroup() %>%
-  ggplot(aes(x = theta1, y = theta2, fill = density)) + geom_raster() + scale_fill_distiller(palette = "Spectral")
+  ggplot(aes(x = theta1, y = theta2, fill = density)) + geom_raster() + scale_fill_distiller()
+
+tibble(theta1_log = seq(log(min_theta), log(max_theta), length.out = 100)) %>% crossing(theta2_log = seq(log(min_theta), log(max_theta), length.out = 100)) %>%
+  mutate(density = dgamma(exp(theta1_log),shape = phi, rate = phi) * dgamma(exp(theta2_log),shape = phi, rate = phi)) %>%
+  rowwise() %>% mutate(density = density * dmultinom(res, prob = exp(c(theta1_log, theta2_log)) * lambda)) %>%
+  ungroup() %>%
+  ggplot(aes(x = theta1_log, y = theta2_log, fill = density)) + geom_raster() + scale_fill_distiller()
+
 ```
 
 ```{r}
