@@ -1,0 +1,93 @@
+---
+title: "Understanding Poisson-Tweedie"
+output: html_notebook
+---
+
+
+```{r}
+library(tweeDEseq)
+library(tidyverse)
+library(rstan)
+library(here)
+
+```
+
+```{r}
+dd <- tibble(mu = 10, D = 2) %>% crossing(a = c(-1e20, -10,-0.5,0,0.3,0.5,0.7,0.9)) %>%
+  crossing(x = 0:100) %>%
+  group_by(mu, D, a) %>%
+  mutate(dens = dPT(x, unique(mu), unique(D), unique(a))) %>%
+  ungroup() %>%
+  mutate(log_dens = log(dens), a_ = factor(a))
+
+dd %>% filter(x < 20) %>% ggplot(aes(x = x, y = dens, color = a_, group = a_)) + geom_line()
+dd %>% ggplot(aes(x = x, y = log_dens, color = a_, group = a_)) + geom_line()
+```
+
+```{r}
+
+```
+
+
+$\log(r_i)$ and its derivatives:
+
+$$
+\log(r_1) = \log(1-a) + \log(c)  \\
+\frac{\partial log(r_1)}{a} = - \frac{1}{1-a} \\
+$$
+Used in d/da log(r_j+1)
+https://www.wolframalpha.com/input/?i=sum+1%2F%28a+%2B+i+-+1%29%2C+i%3D2+to+j
+
+d/da log(p_0)
+https://www.wolframalpha.com/input/?i=d%2Fda+b*%28%281-c%29%5Ea+-+1%29+%2F+a
+
+https://www.wolframalpha.com/input/?i=lim+a+-%3E+0+%28b+%28-%281+-+c%29%5Ea+%2B+a+%281+-+c%29%5Ea+log%281+-+c%29+%2B+1%29%29%2Fa%5E2
+
+d/db log(p_0)
+https://www.wolframalpha.com/input/?i=d%2Fdb+b*%28%281-c%29%5Ea+-+1%29+%2F+a
+
+https://www.wolframalpha.com/input/?i=lim+a-%3E0+%28%281+-+c%29%5Ea+-+1%29%2Fa
+
+
+```{r}
+
+includes <- paste0("\n#include \"", here("dev","poisson_tweedie.hpp"), "\"\n")
+
+model <- stan_model(here("stan","poisson_tweedie.stan"),allow_undefined = TRUE, includes = includes, verbose = TRUE)
+
+expose_stan_functions(model, includes = includes, show_compiler_warnings = TRUE)
+
+```
+
+```{r}
+compare_to_dpT <- function(x, log_mu, D, a) {
+  print(poisson_tweedie_raw_wrapper(x, log_mu, D, a))
+  print(sum(log(dPT(x, exp(log_mu), D, a))))
+}
+
+compare_to_dpT(c(0:10), -2, 1.1, 0.5)
+compare_to_dpT(c(0:2), 3, 10, -0.5)
+compare_to_dpT(c(0:10), 1, 1.8, 0)
+compare_to_dpT(130, log(100), 1.5, -4)
+compare_to_dpT(130, log(100), 1.5, 0.2)
+
+finite_difference_da <- function(x, a, b, c) {
+  step <- 1e-12
+  print((poisson_tweedie_abc_wrapper(x, a + step, b, c) - poisson_tweedie_abc_wrapper(x, a, b, c)) / step)
+  print(poisson_tweedie_abc_da_wrapper(x, a, b, c))
+  
+}
+
+finite_difference_da(0, 0.3, 0.3, 0.5)
+finite_difference_da(0, -0.1, 0.3, 0.5)
+finite_difference_da(0, -1e-20, 0.3, 0.5)
+
+```
+
+
+```{r}
+tibble(a = c(- exp(seq(-10,-1)), 0, exp(seq(-1, -10))), b = 0.3, c = 0.5) %>% rowwise() %>% mutate(lpmf = poisson_tweedie_abc_wrapper(0, a, b, c)) %>% ggplot(aes(a, lpmf)) + geom_line()
+```
+
+
+

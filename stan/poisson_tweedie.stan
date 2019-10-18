@@ -26,9 +26,9 @@ functions{
     return res_log;
   }
 
-  real poisson_tweedie_log_lpmf (int[] x, real mu, real D, real a) {
+  real poisson_tweedie_log_lpmf (int[] x, real log_mu, real D, real a) {
 
-     real b = (exp(mu) * (1 - a)^(1 - a))/((D - 1) * (D - a)^(-a));
+     real b = (exp(log_mu) * (1 - a)^(1 - a))/((D - 1) * (D - a)^(-a));
      real c = (D - 1)/(D - a);
      int xp1[size(x)];
 
@@ -36,6 +36,24 @@ functions{
      return sum(zhuprobsLog(max(x), a, b, c)[xp1]);
 
    }
+
+  real poisson_tweedie_raw_lpmf(int[] x, real a, real b, real c);
+  real poisson_tweedie_raw_da(int[] x, real a, real b, real c);
+
+  real poisson_tweedie_raw_wrapper (int[] x, real log_mu, real D, real a) {
+     real b = (exp(log_mu) * (1 - a)^(1 - a))/((D - 1) * (D - a)^(-a));
+    real c = (D - 1)/(D - a);
+
+    return poisson_tweedie_raw_lpmf(x| a, b, c);
+  }
+
+  real poisson_tweedie_abc_wrapper (int[] x, real a, real b, real c) {
+    return poisson_tweedie_raw_lpmf(x | a, b, c);
+  }
+
+  real poisson_tweedie_abc_da_wrapper (int[] x, real a, real b, real c) {
+    return poisson_tweedie_raw_da(x, a, b, c);
+  }
 
 }
 data{
