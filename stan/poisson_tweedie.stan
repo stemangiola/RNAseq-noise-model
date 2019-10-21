@@ -37,18 +37,18 @@ functions{
 
    }
 
-  real poisson_tweedie_raw_lpmf(int[] x, real a, real b, real c);
+  real poisson_tweedie_raw(int[] x, real a, real b, real c);
   real poisson_tweedie_raw_da(int[] x, real a, real b, real c);
 
   real poisson_tweedie_raw_wrapper (int[] x, real log_mu, real D, real a) {
      real b = (exp(log_mu) * (1 - a)^(1 - a))/((D - 1) * (D - a)^(-a));
     real c = (D - 1)/(D - a);
-
-    return poisson_tweedie_raw_lpmf(x| a, b, c);
+    real xx = 1;
+    return poisson_tweedie_raw(x, a, b, c);
   }
 
   real poisson_tweedie_abc_wrapper (int[] x, real a, real b, real c) {
-    return poisson_tweedie_raw_lpmf(x | a, b, c);
+    return poisson_tweedie_raw(x, a, b, c);
   }
 
   real poisson_tweedie_abc_da_wrapper (int[] x, real a, real b, real c) {

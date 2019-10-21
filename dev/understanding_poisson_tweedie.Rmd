@@ -4,7 +4,7 @@ output: html_notebook
 ---
 
 
-```{r}
+```{r setup}
 library(tweeDEseq)
 library(tidyverse)
 library(rstan)
@@ -51,11 +51,36 @@ https://www.wolframalpha.com/input/?i=lim+a-%3E0+%28%281+-+c%29%5Ea+-+1%29%2Fa
 
 ```{r}
 
-includes <- paste0("\n#include \"", here("dev","poisson_tweedie.hpp"), "\"\n")
+includes_in_namespace <- paste0("\n#include \"", here("dev","poisson_tweedie.hpp"), "\"\n")
+includes_outside_namespace <- paste0("\n#include \"", here("dev","poisson_tweedie_outside_namespace.hpp"), "\"\n")
 
-model <- stan_model(here("stan","poisson_tweedie.stan"),allow_undefined = TRUE, includes = includes, verbose = TRUE)
+stanc_res <- stanc(here("stan","poisson_tweedie.stan"),allow_undefined = TRUE);
 
-expose_stan_functions(model, includes = includes, show_compiler_warnings = TRUE)
+# This might be necessary in 
+# #I need to put the includes outside of model namespace, hence the hack here
+# stanc_res$cppcode <- paste0(includes_outside_namespace, stanc_res$cppcode)
+# 
+# # And copying from the code of the stan_model function (in rstan.R) as includes are supported there (not in stanc)
+# stanc_res$cppcode <- sub("(class[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]*: public prob_grad \\{)",
+#                      paste(includes_in_namespace, "\\1"), stanc_res$cppcode)
+
+
+# HUUUUGE Hack to move things outside namespace
+# End and recreate the automatic namespace from expose_stan_functions
+tf <- tempfile(fileext = ".stan")
+writeLines(stanc_res$model_code, con = tf)
+md5 <- paste("user", tools::md5sum(tf), sep = "_")
+
+includes <- paste0(" } \n", includes_outside_namespace, 
+                   "\nnamespace ", md5, " {\n",
+                   includes_in_namespace
+                   )
+
+cat(stanc_res$cppcode, file = here("model.cpp"))
+expose_stan_functions(stanc_res, show_compiler_warnings = TRUE, rebuild = TRUE, includes = includes)
+# model <- stan_model(here("stan","poisson_tweedie.stan"),allow_undefined = TRUE, includes = includes, verbose = TRUE)
+# 
+# expose_stan_functions(model, includes = includes, show_compiler_warnings = TRUE)
 
 ```
 
