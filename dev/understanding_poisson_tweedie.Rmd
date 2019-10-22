@@ -54,7 +54,7 @@ https://www.wolframalpha.com/input/?i=lim+a-%3E0+%28%281+-+c%29%5Ea+-+1%29%2Fa
 includes_in_namespace <- paste0("\n#include \"", here("dev","poisson_tweedie.hpp"), "\"\n")
 includes_outside_namespace <- paste0("\n#include \"", here("dev","poisson_tweedie_outside_namespace.hpp"), "\"\n")
 
-stanc_res <- stanc(here("stan","poisson_tweedie.stan"),allow_undefined = TRUE);
+stanc_res <- stanc(here("stan","poisson_tweedie_devel.stan"),allow_undefined = TRUE);
 
 # This might be necessary in 
 # #I need to put the includes outside of model namespace, hence the hack here
@@ -95,6 +95,7 @@ compare_to_dpT(c(0:2), 3, 10, -0.5)
 compare_to_dpT(c(0:10), 1, 1.8, 0)
 compare_to_dpT(130, log(100), 1.5, -4)
 compare_to_dpT(130, log(100), 1.5, 0.2)
+compare_to_dpT(c(0:10), -2, 1.1, 0.5)
 
 finite_difference_da <- function(x, a, b, c) {
   step <- 1e-12
@@ -140,10 +141,45 @@ log_diff_exp <- function(x,y) {
 
 ```{r}
 library(tidyverse)
-tibble(a = c(10^(seq(-1, -20))), c = 0.5) %>% rowwise() %>% mutate(orig = ((1.0-c)^a - 1.0) /a, expm1 = expm1(a * log(1 - c))/a)  %>% arrange(a)
+tibble(a = c(10^(seq(-1, -20))), c = 0.5) %>% rowwise() %>% mutate(orig = ((1.0-c)^a - 1.0) /a, series = log(1-c) + 0.5 * (a * log(1-c)^2) + (a^2 * log(1-c) ^ 3)/ 6)  %>% arrange(a)
 ```
 
 ```{r}
 tibble(a = seq(-2, 1, length.out = 201)) %>% crossing(tibble(c = seq(0.4,0.6, length.out = 201))) %>% rowwise() %>% mutate(orig = ((1.0-c)^a - 1.0) /a ) %>% ggplot(aes(x = a, y = c, fill = orig)) + geom_raster() + scale_fill_continuous()
+```
+
+```{r}
+
+includes_in_namespace <- paste0("\n#include \"", here("dev","poisson_tweedie.hpp"), "\"\n")
+includes_outside_namespace <- paste0("\n#include \"", here("dev","poisson_tweedie_outside_namespace.hpp"), "\"\n")
+
+stanc_res <- stanc(here("stan","poisson_tweedie_devel.stan"),allow_undefined = TRUE);
+
+#I need to put the includes outside of model namespace, hence the hack here
+stanc_res$cppcode <- paste0(includes_outside_namespace, stanc_res$cppcode)
+
+# And copying from the code of the stan_model function (in rstan.R) as includes are supported there (not in stanc)
+stanc_res$cppcode <- sub("(class[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]*: public prob_grad \\{)",
+                     paste(includes_in_namespace, "\\1"), stanc_res$cppcode)
+
+devel_model <- stan_model(stanc_ret = stanc_res)
+```
+
+```{r}
+mu = 3
+D = 2
+a = 0 # - rlnorm(1,1)
+N = 10
+
+data <- list(
+  N = N,
+  mu = mu,
+  D = D,
+  y = rPT(N, mu = mu, D = D, a = a)
+)
+
+fit <- sampling(devel_model, data = data)
+fit                
+
 ```
 
