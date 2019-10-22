@@ -107,12 +107,43 @@ finite_difference_da(0, 0.3, 0.3, 0.5)
 finite_difference_da(0, -0.1, 0.3, 0.5)
 finite_difference_da(0, -1e-20, 0.3, 0.5)
 
+
+finite_difference_da(5, 0.3, 0.3, 0.5)
 ```
 
 
 ```{r}
-tibble(a = c(- exp(seq(-10,-1)), 0, exp(seq(-1, -10))), b = 0.3, c = 0.5) %>% rowwise() %>% mutate(lpmf = poisson_tweedie_abc_wrapper(0, a, b, c)) %>% ggplot(aes(a, lpmf)) + geom_line()
+tibble(a = c(- exp(seq(-40,-1)), 0, exp(seq(-1, -40))), b = 0.3, c = 0.5) %>% rowwise() %>% mutate(lpmf = poisson_tweedie_abc_wrapper(0, a, b, c)) %>% arrange(a) #%>% ggplot(aes(a, lpmf)) + geom_line()
+```
+
+```{r}
+log1m_exp <- function(a) {
+  if(is.nan(a)) {
+    NaN
+  }
+  else if (a >= 0) {
+     NaN
+  } else if (a > -0.693147) {
+     log(-expm1(a))
+  } else {
+     log1p(-exp(a))
+  }  
+}
+
+log_diff_exp <- function(x,y) {
+  x + log1m_exp(y - x);
+}
+
+ 
 ```
 
 
+```{r}
+library(tidyverse)
+tibble(a = c(10^(seq(-1, -20))), c = 0.5) %>% rowwise() %>% mutate(orig = ((1.0-c)^a - 1.0) /a, expm1 = expm1(a * log(1 - c))/a)  %>% arrange(a)
+```
+
+```{r}
+tibble(a = seq(-2, 1, length.out = 201)) %>% crossing(tibble(c = seq(0.4,0.6, length.out = 201))) %>% rowwise() %>% mutate(orig = ((1.0-c)^a - 1.0) /a ) %>% ggplot(aes(x = a, y = c, fill = orig)) + geom_raster() + scale_fill_continuous()
+```
 
