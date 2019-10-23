@@ -104,11 +104,11 @@ typename boost::math::tools::promote_args<T_a, T_b, T_c>::type
     using std::pow;
 
     //TODO check inputs
-
+/*
      if(pstream__ != 0) {
      *pstream__ << "Baf:" << a << " " << b << " " << c << std::endl;
      }
-
+*/
 
     int max_x = *std::max_element(x.begin(), x. end());
 
@@ -165,7 +165,7 @@ typename boost::math::tools::promote_args<T_a, T_b, T_c>::type
         }
       }
     }
-
+/*
 
     if(pstream__ != 0) {
        auto print_func = [&](T_ret x) { *pstream__ << x << " "; };
@@ -174,7 +174,7 @@ typename boost::math::tools::promote_args<T_a, T_b, T_c>::type
        std::for_each(log_r.begin(), log_r.end(), print_func);
        *pstream__ << std::endl;
     }
-
+*/
     T_ret lpmf = 0;
     for(int xx : x) {
       lpmf += log_p[xx];

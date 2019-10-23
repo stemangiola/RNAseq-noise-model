@@ -4,8 +4,8 @@ functions{
   real poisson_tweedie_raw_da(int[] x, real a, real b, real c);
 
 
-  real poisson_tweedie_lpmf (int[] x, real log_mu, real D, real a) {
-    real b = (exp(log_mu) * (1 - a)^(1 - a))/((D - 1) * (D - a)^(-a));
+  real poisson_tweedie_lpmf (int[] x, real mu, real D, real a) {
+    real b = (mu * (1 - a)^(1 - a))/((D - 1) * (D - a)^(-a));
     real c = (D - 1)/(D - a);
     return poisson_tweedie_raw(x, a, b, c);
   }
@@ -27,20 +27,28 @@ functions{
 data{
   int<lower=0> N;
   int y[N];
-  real<lower=0> b;
-  real<lower=0> c;
+  real mu_prior_logmean;
+  real<lower=0> mu_prior_sigma;
+  real Dm1_prior_logmean;
+  real<lower=0> Dm1_prior_sigma;
+  //real<lower=0> b;
+  //real<lower=0> c;
 }
 parameters{
-  real<lower=0> a_raw;
+  real<lower=0, upper = 1> a;
+  real<lower=0> mu;
+  real<lower=1> D;
 }
 
 transformed parameters {
-  real<upper=1> a = 1 - a_raw;
+  //real<upper=1> a = 1 - a_raw;
 }
 
 model {
-  a_raw ~ lognormal(1, 1);
-  //y ~ poisson_tweedie(log(mu), D, a);
-  target += poisson_tweedie_raw(y, a, b, c);
+  //a_raw ~ lognormal(1, 1);
+  mu ~ lognormal(mu_prior_logmean, mu_prior_sigma);
+  (D - 1) ~ lognormal(Dm1_prior_logmean, Dm1_prior_sigma);
+  y ~ poisson_tweedie(mu, D, a);
+  //target += poisson_tweedie_raw(y, a, b, c);
 }
 
