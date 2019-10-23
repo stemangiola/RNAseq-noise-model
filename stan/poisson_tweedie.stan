@@ -38,28 +38,17 @@ functions{
    }
 
   real poisson_tweedie_raw(int[] x, real a, real b, real c);
-  real poisson_tweedie_raw_da(int[] x, real a, real b, real c);
 
   real poisson_tweedie_raw_wrapper (int[] x, real log_mu, real D, real a) {
      real b = (exp(log_mu) * (1 - a)^(1 - a))/((D - 1) * (D - a)^(-a));
     real c = (D - 1)/(D - a);
-    real xx = 1;
     return poisson_tweedie_raw(x, a, b, c);
   }
-
-  real poisson_tweedie_abc_wrapper (int[] x, real a, real b, real c) {
-    return poisson_tweedie_raw(x, a, b, c);
-  }
-
-  real poisson_tweedie_abc_da_wrapper (int[] x, real a, real b, real c) {
-    return poisson_tweedie_raw_da(x, a, b, c);
-  }
-
 }
 data{
   int<lower=0> N;
   int y[N];
-
+  int<lower=0, upper=1> method;
 }
 parameters{
   real mu;
@@ -70,7 +59,11 @@ model {
   mu ~ normal(0,2);
   sigma ~ student_t(3, 0, 1);
   nu ~ beta(1,5);
-  y ~ poisson_tweedie_log(mu, sigma, nu);
+  if(method == 0) {
+    y ~ poisson_tweedie_log(mu, sigma, nu);
+  } else {
+    target += poisson_tweedie_raw_wrapper(y, mu, sigma, nu);
+  }
 
 }
 
