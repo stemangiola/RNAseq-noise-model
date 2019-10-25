@@ -51,24 +51,46 @@ functions{
       }
   }
 
+  real sichel2_lpmf(int[] y, real v, real mu, real sigma){
+    if (sigma > 10000 && v > 0) {
+      return neg_binomial_2_log_lpmf(y | mu, 1.0/v);
+    } else {
+       vector[size(y)] lp;
+       real log_sigma = log(sigma);
+       real log_mu = log(mu);
+       real alpha = sqrt(pow(sigma, -2) + 2 * mu / sigma);
+       real log_alpha = log(alpha);//0.5 * log_sum_exp(-2 * log_sigma, log(2) + log_mu - log_sigma);
+       real log_alphapsigma = log_alpha + log_sigma;
+       real log_bes_nu_one_over_sigma = log_besselk_frac(v, 1/sigma);
+       for(i in 1:size(y)) {
+          lp[i] = y[i] * log_mu + log_besselk_frac(y[i] + v, alpha) - lgamma(y[i] + 1) -(y[i] + v) * log_alphapsigma - log_bes_nu_one_over_sigma;
+          //lp[i] = y[i] * log_mu + log_besselk_frac(y[i] + nu, alpha) - lgamma(y[i] + 1) -(y[i] + nu) * log_alphapsigma - log_bes;
+       }
+       return sum(lp);
+    }
+  }
+
 }
 data{
   int<lower=0> N;
   int y[N];
+  int<lower=1, upper=2> method;
 
 }
 parameters{
-  real<upper=0> nu;
+  real nu;
   real<lower=0> mu;
   real<lower=0> sigma;
 }
 model {
-  int x[1];
-x[1] = 10;
-
-//nu ~ student_t(3, 0, 1);
-sigma ~ student_t(3, 0, 10);
-y ~ sichel_lpmf(nu, mu , sigma);
+  nu ~ student_t(3, 0, 1);
+  sigma ~ student_t(3, 0, 1);
+  mu ~ lognormal(2, 2);
+  if(method == 1) {
+    y ~ sichel_lpmf(nu, mu, sigma);
+  } else {
+    y ~ sichel2_lpmf(nu, mu, sigma);
+  }
 
   // print(sichel_lpmf(x | -30.0, 10.0 , 0.1));
   //   print(sichel_lpmf(x | 30.0, 10.0 , 0.1));
