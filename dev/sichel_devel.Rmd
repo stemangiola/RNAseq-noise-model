@@ -83,8 +83,12 @@ lines(y, dSICHEL(y, mu = mu, nu = nu, sigma = sigma))
 
 #The difference is even more pronounced when computing on the log scale
 my_log_dSICHEL <- function(y, mu, nu, sigma) {
-  alpha = sqrt(sigma^-2 + 2 * mu / sigma);
-  y * log(mu) + log(besselK(alpha, y + nu)) - lgamma(y + 1) -(y + nu) * (log(alpha) + log(sigma)) - log(besselK(1/sigma, nu))
+  c_log <- log(besselK(x = 1/sigma, nu = nu + 1)) - log(besselK(x = 1/sigma, nu = nu))
+  alpha = sqrt(sigma^-2 + 2 * mu / (sigma * exp(c_log)));
+  #alpha = sqrt(1.0 + 2.0 * sigma * (mu/exp(c_log)))/sigma;
+  log_mu2 <- log(mu) - c_log
+  #y * log(mu) + log(besselK(x = alpha, nu = y + nu)) - lgamma(y + 1) -(y + nu) * (log(alpha) + log(sigma)) - log(besselK(x = 1/sigma, nu = nu))
+  y * log_mu2 + log(besselK(x = alpha, nu = y + nu)) - lgamma(y + 1) -(y + nu) * (log(alpha) + log(sigma)) - log(besselK(x = 1/sigma, nu = nu))
 }
 
 mu <- 1
@@ -98,11 +102,12 @@ lines(y, dSICHEL(y, mu = mu, nu = nu, sigma = sigma, log = TRUE))
 ```
 
 ```{r, fig.width=8, fig.height=5}
-compare_data <- tibble(mu = 250, sigma = 1) %>% 
-  crossing(tibble(y = seq(from = 0, to = 10000, by = 100))) %>% 
-  crossing(tibble(nu = seq(from = -30, to = 30, by = 5)))%>% 
+compare_data <- tibble(mu = 15, sigma = 1) %>% 
+  crossing(tibble(y = seq(from = 0, to = 100, by = 1))) %>% 
+  crossing(tibble(nu = seq(from = -10, to = 10, by = 1)))%>% 
   rowwise() %>%
   mutate(my_ld = sichel2_lpmf(y = y, mu = mu, v = nu, sigma = sigma), 
+         my_ld_R = my_log_dSICHEL(y = y, mu = mu, nu = nu, sigma = sigma), 
          ld = dSICHEL(x = y, mu = mu, nu = nu, sigma = sigma, log = TRUE)) 
 
 compare_data %>% 
@@ -110,13 +115,28 @@ compare_data %>%
   ggplot(aes(x = y, y = value, color = nu, group = nu)) + geom_line() + facet_wrap(~type)
 ```
 ```{r}
-y <- 0:100000
-mu = 5
-v = 30
+y <- 0:1000
+mu = 1
+v = 
 sigma = 1
-logsumexp(sichel2_lpmf(y = y, mu = mu, v = v, sigma = sigma))
+logsumexp(my_log_dSICHEL(y = y, mu = mu, nu = v, sigma = sigma))
+stan_lpmf <- numeric(length(y)) 
+for(i in 1:length(y)) {
+  stan_lpmf[i] <- sichel2_lpmf(y[i], mu = mu, v = v, sigma = sigma)
+}
+logsumexp(stan_lpmf)
 logsumexp(dSICHEL(x = y, mu = mu, nu = v, sigma = sigma, log = TRUE))
 ```
+
+```{r}
+tibble(sigma = c(0.5, 1, 5)) %>% crossing(v = seq(from = -30, to = 30, by = 0.5)) %>% 
+  mutate(log_R = log(besselK(x = 1/sigma, nu = v + 1)) - log(besselK(x = 1/sigma, nu = v)) ) %>%
+  ggplot(aes(x = v, y = log_R)) + geom_line() + facet_wrap(~sigma, scales = "free")
+```
+
+
+
+
 
 ```{r}
 N <- 20
