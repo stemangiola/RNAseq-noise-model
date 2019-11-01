@@ -34,13 +34,19 @@ data {
   int<lower=1> N;
   int<lower=1> G;
   int<lower=0> counts[N, G];
-  int<lower=0, upper=1> omit_data;
   int<lower=0, upper=1> generate_quantities;
+  int<lower=0, upper=1> generate_log_lik;
+
+  //Set to 1 for each sample that is held out
+  int<lower=0, upper=1> holdout[N];
+
+  int<lower=0> N_samples_log_lik;
 }
 
 transformed data {
   int<lower=0> N_gen = generate_quantities ? N : 0;
   int<lower=0> G_gen = generate_quantities ? G : 0;
+  int<lower=0> N_log_lik = generate_log_lik ? N : 0;
 
   vector[2*G] Q_lambda = Q_sum_to_zero_QR(G);
   int<lower=1> exposure[N];
@@ -67,7 +73,7 @@ transformed parameters {
 model {
   vector[G] gamma_rate = phi ./ exp(lambda);
   for(n in 1:N) {
-    if(omit_data == 0) {
+    if(holdout[n] == 0) {
       counts[n,] ~ multinomial(theta[n,] / sum(theta[n,]));
     }
     theta[n,] ~ gamma(phi, gamma_rate);
@@ -82,6 +88,7 @@ generated quantities{
   int<lower=0> counts_gen_geneWise[N_gen,G_gen];
 
   vector[G_gen] lambda_gen;
+  vector[N_log_lik] log_lik;
 
   if(generate_quantities) {
     // Sample gene wise rates
@@ -109,6 +116,26 @@ generated quantities{
       counts_gen_naive[n,] = multinomial_rng(to_vector(theta_gen[n,]) / sum(theta_gen[n,]), exposure[n]);
       counts_gen_geneWise[n,] = multinomial_rng(to_vector(theta[n,]) / sum(theta[n,]), exposure[n]);
     }
+
   }
+
+    //log_lik for LOO
+  if(generate_log_lik) {
+    vector[G] gamma_rate_gen = phi ./ exp(lambda);
+    {
+      for(n in 1:N) {
+        vector[N_samples_log_lik] log_lik_samp;
+        for(s in 1:N_samples_log_lik) {
+          vector[G] gamma_samp;
+          for(g in 1:G) {
+            gamma_samp[g] = gamma_rng(phi[g], gamma_rate_gen[g]);
+          }
+          log_lik_samp[s] = multinomial_lpmf(counts[n,] | gamma_samp / sum(gamma_samp));
+        }
+        log_lik[n] = log_sum_exp(log_lik_samp) - log(N_samples_log_lik);
+      }
+    }
+  }
+
 
 }

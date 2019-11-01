@@ -1,0 +1,108 @@
+---
+title: "Testing K-fold cross validation & diagnostics with simulated data"
+output: html_notebook
+---
+
+```{r setup}
+
+# Import libraries
+library(tidyverse)
+library(magrittr)
+library(rstan)
+library(tidybayes)
+library(here)
+library(foreach)
+library(doParallel)
+library(loo)
+
+devtools::load_all()
+
+registerDoParallel()
+# library(future)
+# plan(multiprocess)
+
+rstan_options(auto_write = TRUE)
+options(mc.cores = parallel::detectCores())
+```
+
+
+
+
+
+```{r}
+model_defs = data.frame(model_name = c(
+  "negBinomial_deSeq2",
+  "gamma_multinomial_2"
+  ), adapt_delta = c(0.8, 0.95))
+```
+
+
+```{r}
+#Global params shared by both simulations
+N = 20
+G = 30
+asymptDisp = 0.5
+extraPois = 1.3
+N_samples_log_lik <- 10000
+```
+
+
+# Simulating from neg. binomial (DESeq2)
+
+```{r}
+set.seed(20190328)
+data_deseq2 <- generate_data_negbinomial_deseq2(N = N,G = G, asymptDisp = asymptDisp, extraPois = extraPois)$observed
+data_deseq2$generate_quantities = 1
+data_deseq2$generate_log_lik = 1
+data_deseq2$N_samples_log_lik = N_samples_log_lik
+```
+
+
+```{r}
+K = 10
+
+
+#Copy the data for all runs
+kfold_def_deseq2 <- prepare_kfold(K, model_defs, data_deseq2, seed = 45858645)
+
+kfold_res_deseq2 <- run_kfold(kfold_def_deseq2, "test_deseq2")
+
+compare(x = kfold_res_deseq2)
+
+```
+
+```{r}
+holdout_ranks_all_deseq2 <- extract_holdout_ranks_all(kfold_def_deseq2, kfold_res_deseq2)
+```
+
+```{r}
+plot_holdout_ranks(holdout_ranks_all_deseq2, binwidth = 1)
+```
+```{r}
+holdout_ranks_all_deseq2 %>% ggplot(aes(x = rank)) + geom_histogram(bins = 10) + facet_grid(gene~model, scales = "free_y")
+```
+
+# Test simulated from gamma_multinomial_2
+
+
+```{r}
+set.seed(20190329)
+data_gamma_m <- generate_data_gamma_multinomial_2(G = G, sums = rep(G * 500, N), asymptDisp = asymptDisp, extraPois = extraPois)$observed
+data_gamma_m$generate_quantities = 1
+data_gamma_m$generate_log_lik = 1
+data_gamma_m$N_samples_log_lik = N_samples_log_lik
+```
+
+
+```{r}
+K = 10
+
+
+#Copy the data for all runs
+kfold_def_gamma_m <- prepare_kfold(K, model_defs, data_gamma_m, seed = 45858645)
+
+kfold_res_gamma_m <- run_kfold(kfold_def_gamma_m, "test_gamma_m")
+
+compare(x = kfold_res_gamma_m)
+
+```

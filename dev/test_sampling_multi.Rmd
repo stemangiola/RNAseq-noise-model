@@ -11,6 +11,7 @@ library(rstan)
 rstan_options(auto_write = TRUE)
 library(tidyverse)
 library(RNASeqNoiseModel)
+library(here)
 
 simple_model_code = "
 data {
@@ -57,19 +58,19 @@ res[[10]]
 
 ```{r}
 num_data = 5
-data_list = list()
+data_list_mixed = list()
 models = list()
 for(i in 1:num_data) {
-  data_list[[i]] = list(x = rnorm(5, i, 1))
+  data_list_mixed[[i]] = list(x = rnorm(5, i, 1))
   models[[i]] = simple_model
 }
 
 for(i in 1:num_data) {
-  data_list[[i + num_data]] = list(x = rnorm(7, 0, i))
+  data_list_mixed[[i + num_data]] = list(x = rnorm(7, 0, i))
   models[[i + num_data]] = second_simple_model
 }
 
-res = sampling_multi(models, data_list)
+res = sampling_multi(models, data_list_mixed)
 res[[1]]
 res[[5]]
 res[[6]]
@@ -85,11 +86,13 @@ for(i in 1:num_data) {
   data_list[[i]] = list(x = rnorm(5, i, 1))
 }
 
-if(!dir.exists("local_temp_data")) {
-  dir.create("local_temp_data")
+if(!dir.exists(here("local_temp_data"))) {
+  dir.create(here("local_temp_data"))
 }
+
+
 res = sampling_multi(simple_model, data_list, 
-                     map_fun = sampling_multi_store_file_generator("local_temp_data","simple_fit"), 
+                     map_fun = sampling_multi_store_file_generator(here("local_temp_data"),"simple_fit"), 
                      combine_fun = c)
 
 res[[1]]
@@ -102,5 +105,24 @@ Control arguments
 
 ```{r}
 res = sampling_multi(simple_model, data_list, control = list(adapt_delta = 0.95))
+res[[1]]@stan_args[[1]]$control$adapt_delta
+
+```
+
+## Caching
+
+```{r}
+cache_dir <- here("local_temp_data","test_cache")
+if(!dir.exists(cache_dir)){
+  dir.create(cache_dir)
+}
+res = sampling_multi(simple_model, data_list, cache_dir = cache_dir)
+#Expect all read from cache
+res_cached = sampling_multi(simple_model, data_list, cache_dir = cache_dir)
+
+#Expect not read from cache - half data, half model
+res_cached_cached_changed = sampling_multi(models, data_list_mixed, cache_dir = cache_dir)
+
+
 ```
 

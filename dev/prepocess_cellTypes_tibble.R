@@ -12,7 +12,7 @@ get_FANTOM5 = function(){
     extract_tags = "minimal"
   )
 
-  read_delim(
+  reads = read_delim(
     "~/PhD/deconvolution/FANTOM5/hg19.cage_peak_phase1and2combined_counts_ann.osc.txt.uncommented",
     "\t",
     escape_double = FALSE,
@@ -30,79 +30,50 @@ get_FANTOM5 = function(){
     ) %>%
 
     # Get gene symbol
-    separate(short_description, c("dummy", "symbol"), sep="@", remove = F) %>%
+    separate(short_description, c("dummy", "symbol"), sep="@", remove = F)
 
+  # reads  %>%
+  #   left_join(
+  #
+  #     (.) %>%
+  #       distinct(onto_link) %>%
+  #       rowwise() %>%
+  #       do(
+  #         ontologyIndex::get_term_property(
+  #           ontology=onto,
+  #           property="ancestors",
+  #           term=sprintf("FF:%s", .$onto_link),
+  #           as_names=TRUE
+  #         ) %>%
+  #           as.data.frame() %>%
+  #           t() %>%
+  #           as_tibble() %>%
+  #           mutate(onto_link =  names(.)[length(names(.))] %>% gsub("FF:", "", .) ) %>%
+  #           setNames(
+  #             c(
+  #               names(.)[-c(length(names(.)), length(names(.))-1)],
+  #               c("FF:main_info", "onto_link")
+  #             )
+  #           ) %>%
+  #           gather(onto_category, onto_value, -onto_link)
+  #       )  %>%
+  #
+  #       # Filter onyl human samples
+  #       right_join((.) %>% filter(onto_value == "human sample") %>% distinct(onto_link)  ) %>%
+  #
+  #       # Filter only main info
+  #       filter(onto_category == "FF:main_info") %>%
+  #
+  #       # Establish cell types
+  #       mutate(`Cell type` = onto_value)
+  #   ) %>%
+  #   distinct(onto_link ,  sample, `Cell type`) %>%
+  #   write_csv("big_data/tibble_cellType_files/FANTOM5_annotation_cell_types.csv")
+
+  reads %>%
     # Attach ontology
     left_join(
-
-      (.) %>%
-        distinct(onto_link) %>%
-        rowwise() %>%
-        do(
-          ontologyIndex::get_term_property(
-            ontology=onto,
-            property="ancestors",
-            term=sprintf("FF:%s", .$onto_link),
-            as_names=TRUE
-          ) %>%
-            as.data.frame() %>%
-            t() %>%
-            as_tibble() %>%
-            mutate(onto_link =  names(.)[length(names(.))] %>% gsub("FF:", "", .) ) %>%
-            setNames(
-              c(
-                names(.)[-c(length(names(.)), length(names(.))-1)],
-                c("FF:main_info", "onto_link")
-              )
-            ) %>%
-            gather(onto_category, onto_value, -onto_link)
-        )  %>%
-
-        # Filter onyl human samples
-        right_join((.) %>% filter(onto_value == "human sample") %>% distinct(onto_link)  ) %>%
-
-        # Filter only main info
-        filter(onto_category == "FF:main_info") %>%
-
-        # Establish cell types
-        mutate(`Cell type` = onto_value) %>%
-        mutate(`Cell type formatted` = NA) %>%
-        mutate(`Cell type formatted` = ifelse(grepl("fibrobl", onto_value, ignore.case = T), "fibroblast", `Cell type formatted`)) %>%
-        mutate(`Cell type formatted` = ifelse(grepl("epithelial", onto_value, ignore.case = T), "epithelial", `Cell type formatted`)) %>%
-        mutate(`Cell type formatted` = ifelse(grepl("human CD14-positive CD16-negative Monocytes sample", onto_value, ignore.case = T), "monocyte", `Cell type formatted`)) %>%
-        mutate(`Cell type formatted` = ifelse(grepl("blood", onto_value, ignore.case = T), "epithelial", `Cell type formatted`)) %>%
-        mutate(`Cell type formatted` = ifelse(grepl("natural_killer", onto_value, ignore.case = T), "natural_killer", `Cell type formatted`)) %>%
-        mutate(`Cell type formatted` = ifelse(grepl("endothelial", onto_value, ignore.case = T) & !grepl("progenitor", onto_value, ignore.case = T), "endothelial", `Cell type formatted`)) %>%
-        mutate(`Cell type formatted` = ifelse(grepl("mature adipocyte", onto_value, ignore.case = T), "adipocyte", `Cell type formatted`)) %>%
-        mutate(`Cell type formatted` = ifelse(grepl("adipocyte", onto_value, ignore.case = T), "adipocyte", `Cell type formatted`)) %>%
-        mutate(`Cell type formatted` = ifelse(grepl("smooth muscle", onto_value, ignore.case = T), "smooth_muscle", `Cell type formatted`)) %>%
-        mutate(`Cell type formatted` = ifelse(grepl("brain", onto_value, ignore.case = T), "neural", `Cell type formatted`)) %>%
-        mutate(`Cell type formatted` = ifelse(grepl("astrocyte", onto_value, ignore.case = T), "neural", `Cell type formatted`)) %>%
-        mutate(`Cell type formatted` = ifelse(grepl("neuron", onto_value, ignore.case = T), "neural", `Cell type formatted`)) %>%
-        mutate(`Cell type formatted` = ifelse(grepl("neural", onto_value, ignore.case = T), "neural", `Cell type formatted`)) %>%
-        mutate(`Cell type formatted` = ifelse(grepl("osteoblast", onto_value, ignore.case = T), "osteoblast", `Cell type formatted`)) %>%
-        mutate(`Cell type formatted` = ifelse(grepl("skeletal muscle", onto_value, ignore.case = T), "skeletal_muscle", `Cell type formatted`)) %>%
-        mutate(`Cell type formatted` = ifelse(grepl("mesenchymal", onto_value, ignore.case = T), "stem_cell", `Cell type formatted`)) %>%
-        mutate(`Cell type formatted` = ifelse(grepl("stem", onto_value, ignore.case = T), "stem_cell", `Cell type formatted`)) %>%
-        mutate(`Cell type formatted` = ifelse(grepl("CD19-positive B cell", onto_value, ignore.case = T), "b_cell", `Cell type formatted`)) %>%
-        mutate(`Cell type formatted` = ifelse(grepl("CD8-positive T cell", onto_value, ignore.case = T), "t_CD8", `Cell type formatted`)) %>%
-        mutate(`Cell type formatted` = ifelse(grepl("CD4-positive T cell", onto_value, ignore.case = T), "t_CD4", `Cell type formatted`)) %>%
-        mutate(`Cell type formatted` = ifelse(grepl("neutrophil", onto_value, ignore.case = T), "neutrophil", `Cell type formatted`)) %>%
-        mutate(`Cell type formatted` = ifelse(grepl("human eosinophil sample", onto_value, ignore.case = T), "eosinophil", `Cell type formatted`)) %>%
-        mutate(`Cell type formatted` = ifelse(grepl("human natural killer", onto_value, ignore.case = T), "natural_killer", `Cell type formatted`)) %>%
-        mutate(`Cell type formatted` = ifelse(grepl("naive conventional T cells", onto_value, ignore.case = T), "t_cell_naive", `Cell type formatted`)) %>%
-        mutate(`Cell type formatted` = ifelse(grepl("memory conventional T cells", onto_value, ignore.case = T), "t_memory", `Cell type formatted`)) %>%
-        mutate(`Cell type formatted` = ifelse(grepl("Dendritic Cells - monocyte immature derived", onto_value, ignore.case = T), "dendritic", `Cell type formatted`)) %>%
-        mutate(`Cell type formatted` = ifelse(grepl("stem", onto_value, ignore.case = T), "stem_cell", `Cell type formatted`)) %>%
-        mutate(`Cell type formatted` = ifelse(grepl("Monocyte-derived macrophages 0h", onto_value, ignore.case = T), "macrophage", `Cell type formatted`)) %>%
-        mutate(`Cell type formatted` = ifelse(grepl("Monocyte-derived macrophages repsonse to LPS, 00hr00", onto_value, ignore.case = T), "macrophage", `Cell type formatted`)) %>%
-        mutate(`Cell type formatted` = ifelse(grepl("Natural Killer Cells, donor", onto_value, ignore.case = T), "natural_killer", `Cell type formatted`)) %>%
-        mutate(`Cell type formatted` = ifelse(grepl("adipose, donor", onto_value, ignore.case = T), "adipocyte", `Cell type formatted`)) %>%
-
-
-        # filter only recognised cell types
-        distinct(onto_link, `Cell type`, `Cell type formatted`)
-
+      read_csv("~/PostDoc/RNAseq-noise-model/big_data/tibble_cellType_files/FANTOM5_annotation_cell_types.csv")
     ) %>%
     dplyr::distinct(sample, symbol, `Cell type`, `Cell type formatted`, `read count`, entrezgene_id) %>%
 
@@ -114,61 +85,64 @@ get_BLUEPRINT = function(){
   # Parse BLUEPRINT data base
 
 
-  read_delim(
-    "/wehisan/home/allstaff/m/mangiola.s/PhD/deconvolution/BLUEPRINT_db/blueprint_files.tsv",
-    "\t",
-    escape_double = FALSE,
-    trim_ws = TRUE
-  ) %>%
-    filter(`File type` == "Transcription quantification (Genes)") %>%
-    filter(!is.na(`Cell type`)) %>%
+  # read_delim(
+  #   "/wehisan/home/allstaff/m/mangiola.s/PhD/deconvolution/BLUEPRINT_db/blueprint_files.tsv",
+  #   "\t",
+  #   escape_double = FALSE,
+  #   trim_ws = TRUE
+  # ) %>%
+  #   filter(`File type` == "Transcription quantification (Genes)") %>%
+  #   filter(!is.na(`Cell type`)) %>%
+  #
+  #   # Get data from URL
+  #   separate(URL, sep="/|\\.", sprintf("URL_%s", 1:30), remove = F) %>%
+  #   mutate(`Cell type` = gsub("_", " ", URL_15)) %>%
+  #   mutate(sample = URL_18) %>%
+  #
+  #   distinct(Group, `Sub-group`, `Cell type`, Tissue, sample) %>%
+  #   write_csv("big_data/tibble_cellType_files/BLUEPRINT__annotation_cell_types.csv")
 
-    # Get data from URL
-    separate(URL, sep="/|\\.", sprintf("URL_%s", 1:30), remove = F) %>%
-    mutate(`Cell type` = gsub("_", " ", URL_15)) %>%
-    mutate(sample = URL_18) %>%
-
-    # Chenage cell type names
-    mutate(`Cell type formatted` = NA) %>%
-    mutate(`Cell type formatted` = ifelse(grepl("plasma cell", `Cell type`, ignore.case=T), "plasma_cell", `Cell type formatted`)) %>%
-    mutate(`Cell type formatted` = ifelse(grepl("plasma cell", `Cell type`, ignore.case=T), "plasma_cell", `Cell type formatted`)) %>%
-    mutate(`Cell type formatted` = ifelse(grepl("band form neutrophil", `Cell type`, ignore.case=T), "neutrophil", `Cell type formatted`)) %>%
-    mutate(`Cell type formatted` = ifelse(grepl("mature neutrophil", `Cell type`, ignore.case=T), "neutrophil", `Cell type formatted`)) %>%
-    mutate(`Cell type formatted` = ifelse(grepl("segmented neutrophil of bone marrow", `Cell type`, ignore.case=T), "neutrophil", `Cell type formatted`)) %>%
-    mutate(`Cell type formatted` = ifelse(grepl("myeloid cell", `Cell type`, ignore.case=T), "myeloid", `Cell type formatted`)) %>%
-    mutate(`Cell type formatted` = ifelse(grepl("lymphocyte of B lineage", `Cell type`, ignore.case=T), "b_cell", `Cell type formatted`)) %>%
-    mutate(`Cell type formatted` = ifelse(grepl("CD14-positive, CD16-negative classical monocyte", `Cell type`, ignore.case=T), "monocyte", `Cell type formatted`)) %>%
-    mutate(`Cell type formatted` = ifelse(grepl("common lymphoid progenitor", `Cell type`, ignore.case=T), "lymphoid", `Cell type formatted`)) %>%
-    mutate(`Cell type formatted` = ifelse(grepl("hematopoietic multipotent progenitor cell", `Cell type`, ignore.case=T), "stem_cell", `Cell type formatted`)) %>%
-    mutate(`Cell type formatted` = ifelse(grepl("hematopoietic stem cell", `Cell type`, ignore.case=T), "stem_cell", `Cell type formatted`)) %>%
-    mutate(`Cell type formatted` = ifelse(grepl("CD38-negative naive B cell", `Cell type`, ignore.case=T), "b_cell_naive", `Cell type formatted`)) %>%
-    mutate(`Cell type formatted` = ifelse(grepl("cytotoxic CD56-dim natural killer cell", `Cell type`, ignore.case=T), "natural_killer", `Cell type formatted`)) %>%
-    mutate(`Cell type formatted` = ifelse(grepl("common myeloid progenitor", `Cell type`, ignore.case=T), "myeloid", `Cell type formatted`)) %>%
-    mutate(`Cell type formatted` = ifelse(grepl("inflammatory macrophage", `Cell type`, ignore.case=T), "macrophage_M1", `Cell type formatted`)) %>%
-    mutate(`Cell type formatted` = ifelse(grepl("macrophage", `Cell type`, ignore.case=T), "macrophage", `Cell type formatted`)) %>%
-    mutate(`Cell type formatted` = ifelse(grepl("endothelial", `Cell type`, ignore.case=T), "endothelial", `Cell type formatted`)) %>%
-    mutate(`Cell type formatted` = ifelse(grepl("alternatively activated macrophage", `Cell type`, ignore.case=T), "macrophage_M2", `Cell type formatted`)) %>%
-    mutate(`Cell type formatted` = ifelse(grepl("conventional dendritic cell", `Cell type`, ignore.case=T), "dendritic", `Cell type formatted`)) %>%
-    mutate(`Cell type formatted` = ifelse(grepl("germinal center B cell", `Cell type`, ignore.case=T), "b_cell_germinal_center", `Cell type formatted`)) %>%
-    mutate(`Cell type formatted` = ifelse(grepl("naive B cell", `Cell type`, ignore.case=T), "b_cell_naive", `Cell type formatted`)) %>%
-    mutate(`Cell type formatted` = ifelse(grepl("immature conventional dendritic cell", `Cell type`, ignore.case=T), "dendritic_immature", `Cell type formatted`)) %>%
-    mutate(`Cell type formatted` = ifelse(grepl("mature conventional dendritic cell", `Cell type`, ignore.case=T), "dendritic", `Cell type formatted`)) %>%
-    mutate(`Cell type formatted` = ifelse(grepl("osteoclast", `Cell type`, ignore.case=T), "osteoclast", `Cell type formatted`)) %>%
-    mutate(`Cell type formatted` = ifelse(grepl("class switched memory B cell", `Cell type`, ignore.case=T), "b_cell_memory", `Cell type formatted`)) %>%
-    mutate(`Cell type formatted` = ifelse(grepl("memory B cell", `Cell type`, ignore.case=T), "b_cell_memory", `Cell type formatted`)) %>%
-    mutate(`Cell type formatted` = ifelse(grepl("monocyte", `Cell type`, ignore.case=T), "monocyte", `Cell type formatted`)) %>%
-    mutate(`Cell type formatted` = ifelse(grepl("peripheral blood mononuclear cell", `Cell type`, ignore.case=T), "mono_derived", `Cell type formatted`)) %>%
-
-    mutate(`Cell type formatted` = ifelse(`Cell type`==("CD8-positive alpha-beta T cell"), "t_CD8", `Cell type formatted`)) %>%
-    mutate(`Cell type formatted` = ifelse(`Cell type`==("CD4-positive alpha-beta T cell"), "t_CD4", `Cell type formatted`)) %>%
-    mutate(`Cell type formatted` = ifelse(grepl("central memory CD8-positive", `Cell type`, ignore.case=T), "t_CD8_memory_central", `Cell type formatted`)) %>%
-    mutate(`Cell type formatted` = ifelse(grepl("effector memory CD8-positive", `Cell type`, ignore.case=T), "t_CD8_memory_effector", `Cell type formatted`)) %>%
-    mutate(`Cell type formatted` = ifelse(grepl("central memory CD4-positive", `Cell type`, ignore.case=T), "t_memory_central", `Cell type formatted`)) %>%
-    mutate(`Cell type formatted` = ifelse(grepl("effector memory CD4-positive", `Cell type`, ignore.case=T), "t_memory_effector", `Cell type formatted`)) %>%
-    mutate(`Cell type formatted` = ifelse(grepl("regulatory T cell", `Cell type`, ignore.case=T), "t_reg", `Cell type formatted`)) %>%
+    # # Chenage cell type names
+    # mutate(`Cell type formatted` = NA) %>%
+    # mutate(`Cell type formatted` = ifelse(grepl("plasma cell", `Cell type`, ignore.case=T), "plasma_cell", `Cell type formatted`)) %>%
+    # mutate(`Cell type formatted` = ifelse(grepl("plasma cell", `Cell type`, ignore.case=T), "plasma_cell", `Cell type formatted`)) %>%
+    # mutate(`Cell type formatted` = ifelse(grepl("band form neutrophil", `Cell type`, ignore.case=T), "neutrophil", `Cell type formatted`)) %>%
+    # mutate(`Cell type formatted` = ifelse(grepl("mature neutrophil", `Cell type`, ignore.case=T), "neutrophil", `Cell type formatted`)) %>%
+    # mutate(`Cell type formatted` = ifelse(grepl("segmented neutrophil of bone marrow", `Cell type`, ignore.case=T), "neutrophil", `Cell type formatted`)) %>%
+    # mutate(`Cell type formatted` = ifelse(grepl("myeloid cell", `Cell type`, ignore.case=T), "myeloid", `Cell type formatted`)) %>%
+    # mutate(`Cell type formatted` = ifelse(grepl("lymphocyte of B lineage", `Cell type`, ignore.case=T), "b_cell", `Cell type formatted`)) %>%
+    # mutate(`Cell type formatted` = ifelse(grepl("CD14-positive, CD16-negative classical monocyte", `Cell type`, ignore.case=T), "monocyte", `Cell type formatted`)) %>%
+    # mutate(`Cell type formatted` = ifelse(grepl("common lymphoid progenitor", `Cell type`, ignore.case=T), "lymphoid", `Cell type formatted`)) %>%
+    # mutate(`Cell type formatted` = ifelse(grepl("hematopoietic multipotent progenitor cell", `Cell type`, ignore.case=T), "stem_cell", `Cell type formatted`)) %>%
+    # mutate(`Cell type formatted` = ifelse(grepl("hematopoietic stem cell", `Cell type`, ignore.case=T), "stem_cell", `Cell type formatted`)) %>%
+    # mutate(`Cell type formatted` = ifelse(grepl("CD38-negative naive B cell", `Cell type`, ignore.case=T), "b_cell_naive", `Cell type formatted`)) %>%
+    # mutate(`Cell type formatted` = ifelse(grepl("cytotoxic CD56-dim natural killer cell", `Cell type`, ignore.case=T), "natural_killer", `Cell type formatted`)) %>%
+    # mutate(`Cell type formatted` = ifelse(grepl("common myeloid progenitor", `Cell type`, ignore.case=T), "myeloid", `Cell type formatted`)) %>%
+    # mutate(`Cell type formatted` = ifelse(grepl("inflammatory macrophage", `Cell type`, ignore.case=T), "macrophage_M1", `Cell type formatted`)) %>%
+    # mutate(`Cell type formatted` = ifelse(grepl("macrophage", `Cell type`, ignore.case=T), "macrophage", `Cell type formatted`)) %>%
+    # mutate(`Cell type formatted` = ifelse(grepl("endothelial", `Cell type`, ignore.case=T), "endothelial", `Cell type formatted`)) %>%
+    # mutate(`Cell type formatted` = ifelse(grepl("alternatively activated macrophage", `Cell type`, ignore.case=T), "macrophage_M2", `Cell type formatted`)) %>%
+    # mutate(`Cell type formatted` = ifelse(grepl("conventional dendritic cell", `Cell type`, ignore.case=T), "dendritic", `Cell type formatted`)) %>%
+    # mutate(`Cell type formatted` = ifelse(grepl("germinal center B cell", `Cell type`, ignore.case=T), "b_cell_germinal_center", `Cell type formatted`)) %>%
+    # mutate(`Cell type formatted` = ifelse(grepl("naive B cell", `Cell type`, ignore.case=T), "b_cell_naive", `Cell type formatted`)) %>%
+    # mutate(`Cell type formatted` = ifelse(grepl("immature conventional dendritic cell", `Cell type`, ignore.case=T), "dendritic_immature", `Cell type formatted`)) %>%
+    # mutate(`Cell type formatted` = ifelse(grepl("mature conventional dendritic cell", `Cell type`, ignore.case=T), "dendritic", `Cell type formatted`)) %>%
+    # mutate(`Cell type formatted` = ifelse(grepl("osteoclast", `Cell type`, ignore.case=T), "osteoclast", `Cell type formatted`)) %>%
+    # mutate(`Cell type formatted` = ifelse(grepl("class switched memory B cell", `Cell type`, ignore.case=T), "b_cell_memory", `Cell type formatted`)) %>%
+    # mutate(`Cell type formatted` = ifelse(grepl("memory B cell", `Cell type`, ignore.case=T), "b_cell_memory", `Cell type formatted`)) %>%
+    # mutate(`Cell type formatted` = ifelse(grepl("monocyte", `Cell type`, ignore.case=T), "monocyte", `Cell type formatted`)) %>%
+    # mutate(`Cell type formatted` = ifelse(grepl("peripheral blood mononuclear cell", `Cell type`, ignore.case=T), "mono_derived", `Cell type formatted`)) %>%
+    #
+    # mutate(`Cell type formatted` = ifelse(`Cell type`==("CD8-positive alpha-beta T cell"), "t_CD8", `Cell type formatted`)) %>%
+    # mutate(`Cell type formatted` = ifelse(`Cell type`==("CD4-positive alpha-beta T cell"), "t_CD4", `Cell type formatted`)) %>%
+    # mutate(`Cell type formatted` = ifelse(grepl("central memory CD8-positive", `Cell type`, ignore.case=T), "t_CD8_memory_central", `Cell type formatted`)) %>%
+    # mutate(`Cell type formatted` = ifelse(grepl("effector memory CD8-positive", `Cell type`, ignore.case=T), "t_CD8_memory_effector", `Cell type formatted`)) %>%
+    # mutate(`Cell type formatted` = ifelse(grepl("central memory CD4-positive", `Cell type`, ignore.case=T), "t_memory_central", `Cell type formatted`)) %>%
+    # mutate(`Cell type formatted` = ifelse(grepl("effector memory CD4-positive", `Cell type`, ignore.case=T), "t_memory_effector", `Cell type formatted`)) %>%
+    # mutate(`Cell type formatted` = ifelse(grepl("regulatory T cell", `Cell type`, ignore.case=T), "t_reg", `Cell type formatted`)) %>%
 
     # Select info
-    select(sample, `Cell type`, `Cell type formatted`) %>%
+    read_csv("big_data/tibble_cellType_files/BLUEPRINT__annotation_cell_types.csv") %>%
 
     # Add expression
     left_join(
@@ -235,7 +209,7 @@ get_bloodRNA = function(){
     mutate(`Cell type` = NA) %>%
 
     # Format cell types
-    mutate(`Cell type` = ifelse(grepl("_mDC_", file), "dendritic", `Cell type`)) %>%
+    mutate(`Cell type` = ifelse(grepl("_mDC_", file), "dendritic_m", `Cell type`)) %>%
     mutate(`Cell type` = ifelse(grepl("_CD4_Tcells_", file), "t_CD4", `Cell type`)) %>%
     mutate(`Cell type` = ifelse(grepl("_Eosinophils_", file), "eosinophil", `Cell type`)) %>%
     mutate(`Cell type` = ifelse(grepl("_Memory_Bcells_", file), "b_memory", `Cell type`)) %>%
@@ -281,41 +255,45 @@ get_bloodRNA = function(){
 get_ENCODE = function(){
 
 
-  metadata <- read_delim("/wehisan/home/allstaff/m/mangiola.s/PhD/deconvolution/ENCODE/metadata.tsv",  "\t", escape_double = FALSE, trim_ws = TRUE)
-  metadata = metadata %>% filter(`Output type` == "gene quantifications") %>% filter(Assembly == "hg19")
-  metadata$`Cell type formatted` = NA
-  metadata$`Cell type formatted`[grep("epithelial", metadata$`Biosample term name`, ignore.case=T)] = "epithelial"
-  metadata$`Cell type formatted`[grep("stem cell", metadata$`Biosample term name`, fixed=T) ] = "stem_cell"
-  metadata$`Cell type formatted`[grep("fibroblast", metadata$`Biosample term name`, fixed=T) ] = "fibroblast"
-  metadata$`Cell type formatted`[grep("endothelial", metadata$`Biosample term name`, fixed=T) ] = "endothelial"
-  metadata$`Cell type formatted`[grep("smooth muscle", metadata$`Biosample term name`, fixed=T) ] = "smooth_muscle"
-  metadata$`Cell type formatted`[grep("neuron", metadata$`Biosample term name`, fixed=T) ] = "neural"
-  metadata$`Cell type formatted`[grep("keratinocyte", metadata$`Biosample term name`, fixed=T) ] = "keratinocyte"
-  metadata$`Cell type formatted`[grep("astrocyte", metadata$`Biosample term name`, fixed=T) ] = "astrocyte"
-  metadata$`Cell type formatted`[grep("dendritic cell", metadata$`Biosample term name`, fixed=T) ] = "dendritic"
-  metadata$`Cell type formatted`[grep("myocyte", metadata$`Biosample term name`, fixed=T) ] = "myocyte"
-  metadata$`Cell type formatted`[grep("natural killer", metadata$`Biosample term name`, fixed=T) ] = "natural_killer"
-  metadata$`Cell type formatted`[grep("CD4-positive helper T cell", metadata$`Biosample term name`, fixed=T) ] = "t_helper"
-  metadata$`Cell type formatted`[grep("neural", metadata$`Biosample term name`, fixed=T) ] = "neural"
-  metadata$`Cell type formatted`[grep("CD14-positive monocyte", metadata$`Biosample term name`, fixed=T) ] = "mono_derived"
-  metadata$`Cell type formatted`[grep("hepatocyte", metadata$`Biosample term name`, fixed=T) ] = "hepatocyte"
-  metadata$`Cell type formatted`[grep("hematopoietic multipotent progenitor cell", metadata$`Biosample term name`, fixed=T) ] = "stem_cell"
-  metadata$`Cell type formatted`[grep("chondrocyte", metadata$`Biosample term name`)] = "chondrocyte"
-  metadata$`Cell type formatted`[grep("CD8-positive, alpha-beta T cell", metadata$`Biosample term name`) ] = "t_CD8"
-  metadata$`Cell type formatted`[grep("melanocyte", metadata$`Biosample term name`, fixed=T) ] = "melanocyte"
-  metadata$`Cell type formatted`[grep("B cell", metadata$`Biosample term name`, fixed=T) ] = "b_cell"
-  metadata$`Cell type formatted`[grep("osteoblast", metadata$`Biosample term name`, fixed=T) ] = "osteoblast"
-  metadata$`Cell type formatted`[grep("naive B cell", metadata$`Biosample term name`, fixed=T) ] = "b_cell_naive"
-  metadata$`Cell type formatted`[grep("T-cell", metadata$`Biosample term name`, fixed=T) ] = "t_cell"
-  metadata = metadata[!is.na(metadata$`Cell type formatted`),]
+  # read_delim("/wehisan/home/allstaff/m/mangiola.s/PhD/deconvolution/ENCODE/metadata.tsv",  "\t", escape_double = FALSE, trim_ws = TRUE) %>%
+  #   filter(`Output type` == "gene quantifications") %>%
+  #   dplyr::mutate(sample = `File accession`) %>%
+  #   mutate(`Cell type` = `Biosample term name`) %>%
+  #   distinct(sample, `Cell type`, `Biosample type`) %>%
+  #   write_csv("big_data/tibble_cellType_files/ENCODE__annotation_cell_types.csv")
+  #
+  #
+  # metadata$`Cell type formatted` = NA
+  # metadata$`Cell type formatted`[grep("epithelial", metadata$`Biosample term name`, ignore.case=T)] = "epithelial"
+  # metadata$`Cell type formatted`[grep("stem cell", metadata$`Biosample term name`, fixed=T) ] = "stem_cell"
+  # metadata$`Cell type formatted`[grep("fibroblast", metadata$`Biosample term name`, fixed=T) ] = "fibroblast"
+  # metadata$`Cell type formatted`[grep("endothelial", metadata$`Biosample term name`, fixed=T) ] = "endothelial"
+  # metadata$`Cell type formatted`[grep("smooth muscle", metadata$`Biosample term name`, fixed=T) ] = "smooth_muscle"
+  # metadata$`Cell type formatted`[grep("neuron", metadata$`Biosample term name`, fixed=T) ] = "neural"
+  # metadata$`Cell type formatted`[grep("keratinocyte", metadata$`Biosample term name`, fixed=T) ] = "keratinocyte"
+  # metadata$`Cell type formatted`[grep("astrocyte", metadata$`Biosample term name`, fixed=T) ] = "astrocyte"
+  # metadata$`Cell type formatted`[grep("dendritic cell", metadata$`Biosample term name`, fixed=T) ] = "dendritic"
+  # metadata$`Cell type formatted`[grep("myocyte", metadata$`Biosample term name`, fixed=T) ] = "myocyte"
+  # metadata$`Cell type formatted`[grep("natural killer", metadata$`Biosample term name`, fixed=T) ] = "natural_killer"
+  # metadata$`Cell type formatted`[grep("CD4-positive helper T cell", metadata$`Biosample term name`, fixed=T) ] = "t_helper"
+  # metadata$`Cell type formatted`[grep("neural", metadata$`Biosample term name`, fixed=T) ] = "neural"
+  # metadata$`Cell type formatted`[grep("CD14-positive monocyte", metadata$`Biosample term name`, fixed=T) ] = "mono_derived"
+  # metadata$`Cell type formatted`[grep("hepatocyte", metadata$`Biosample term name`, fixed=T) ] = "hepatocyte"
+  # metadata$`Cell type formatted`[grep("hematopoietic multipotent progenitor cell", metadata$`Biosample term name`, fixed=T) ] = "stem_cell"
+  # metadata$`Cell type formatted`[grep("chondrocyte", metadata$`Biosample term name`)] = "chondrocyte"
+  # metadata$`Cell type formatted`[grep("CD8-positive, alpha-beta T cell", metadata$`Biosample term name`) ] = "t_CD8"
+  # metadata$`Cell type formatted`[grep("melanocyte", metadata$`Biosample term name`, fixed=T) ] = "melanocyte"
+  # metadata$`Cell type formatted`[grep("B cell", metadata$`Biosample term name`, fixed=T) ] = "b_cell"
+  # metadata$`Cell type formatted`[grep("osteoblast", metadata$`Biosample term name`, fixed=T) ] = "osteoblast"
+  # metadata$`Cell type formatted`[grep("naive B cell", metadata$`Biosample term name`, fixed=T) ] = "b_cell_naive"
+  # metadata$`Cell type formatted`[grep("T-cell", metadata$`Biosample term name`, fixed=T) ] = "t_cell"
+  # metadata = metadata[!is.na(metadata$`Cell type formatted`),]
 
-  metadata %>%
-    dplyr::mutate(sample = `File accession`) %>%
-    mutate(`Cell type` = `Biosample term name`) %>%
+  read_csv("big_data/tibble_cellType_files/ENCODE__annotation_cell_types.csv") %>%
 
     left_join(
       # Get counts from files
-      foreach(f = metadata$`File accession`, .combine = bind_rows) %dopar% {
+      foreach(f = .$sample, .combine = bind_rows) %dopar% {
         read_delim(
           sprintf("/wehisan/home/allstaff/m/mangiola.s/PhD/deconvolution/ENCODE/%s.tsv", f),
           "\t",
@@ -324,24 +302,37 @@ get_ENCODE = function(){
         ) %>%
           dplyr:::select(gene_id, expected_count) %>%
           mutate(sample = f)
-      }) %>%
-
-    left_join(
-      (.) %>%
-        separate(gene_id, c("ENSEMBL_ID", "dummy"), sep = "\\." , remove = F) %>%
-        distinct(ENSEMBL_ID, gene_id) %>%
-
-        mutate(
-          symbol =
-            AnnotationDbi::mapIds(
-              org.Hs.eg.db::org.Hs.eg.db,
-              keys=ENSEMBL_ID,
-              column="SYMBOL",
-              keytype="ENSEMBL",
-              multiVals="first"
-            )
-        )
+      }
     ) %>%
+    {
+      samples_with_symbol = c("ENCFF060YNO", "ENCFF677SZA", "ENCFF708ZUJ", "ENCFF255ULI", "ENCFF717WSQ", "ENCFF118GPH", "ENCFF083PYO" ,"ENCFF712VOY" ,"ENCFF094ADI",
+                              "ENCFF841AKS", "ENCFF331CDB", "ENCFF263OIE", "ENCFF798GKH" ,"ENCFF491YKJ" ,"ENCFF867RFN", "ENCFF461BKM", "ENCFF929RZY", "ENCFF440CJU",
+                              "ENCFF246ZOR", "ENCFF680YEW")
+      bind_rows(
+
+        (.) %>%
+          filter(sample %in% samples_with_symbol) %>%
+          rename(symbol = gene_id),
+
+        (.) %>% filter(!sample %in% samples_with_symbol) %>%
+          left_join(
+            (.) %>%
+              separate(gene_id, c("ENSEMBL_ID", "dummy"), sep = "\\." , remove = F) %>%
+              distinct(ENSEMBL_ID, gene_id) %>%
+              mutate(
+                symbol =
+                  AnnotationDbi::mapIds(
+                    org.Hs.eg.db::org.Hs.eg.db,
+                    keys=ENSEMBL_ID,
+                    column="SYMBOL",
+                    keytype="ENSEMBL",
+                    multiVals="first"
+                  ) %>%
+                  unlist
+              )
+          )
+      )
+    } %>%
     rename(`read count` = expected_count) %>%
     dplyr::select(sample, `Cell type`, `Cell type formatted`, `read count`, symbol, ENSEMBL_ID) %>%
     mutate(`Data base` = "ENCODE")
@@ -360,6 +351,12 @@ save(FANTOM5, file="big_data/tibble_cellType_files/FANTOM5.RData")
 
 bloodRNA = get_bloodRNA()
 save(bloodRNA, file="big_data/tibble_cellType_files/bloodRNA.RData")
+
+#     GSE115898
+# DC, T cell
+
+#  GSE107011
+# 29 immune cell types
 
 ENCODE %>%
   bind_rows(BLUEPRINT) %>%

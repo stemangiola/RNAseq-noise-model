@@ -36,11 +36,23 @@ data {
   int<lower=0> G;
   int<lower=0> counts[N,G];
   real my_prior[2];
-  int<lower=0, upper=1> omit_data;
+  //Set to 1 for each sample that is held out
+  int<lower=0, upper=1> holdout[N];
+
+  int<lower=0, upper=1> generate_quantities;
+  int<lower=0, upper=1> generate_log_lik;
 
   // Alternative models
   int<lower=0, upper=1> is_prior_asymetric;
 }
+
+transformed data {
+  int<lower=0> N_gen = generate_quantities ? N : 0;
+  int<lower=0> G_gen = generate_quantities ? G : 0;
+  int<lower=0> N_log_lik = generate_log_lik ? N : 0;
+}
+
+
 parameters {
 
   // Overall properties of the data
@@ -70,22 +82,35 @@ model {
   lambda ~ normal_or_gammaLog(lambda_mu, lambda_sigma, is_prior_asymetric);
 
   // Sample from data
-  if(omit_data==0) for(n in 1:N) counts[n,] ~ neg_binomial_2_log(exposure_rate[n] + lambda, sigma);
+  for(n in 1:N) {
+    if(holdout[n] == 0) {
+      counts[n,] ~ neg_binomial_2_log(exposure_rate[n] + lambda, sigma);
+    }
+  }
 
 }
 generated quantities{
-  int<lower=0> counts_gen_naive[N,G];
-  int<lower=0> counts_gen_geneWise[N,G];
-  vector[G] lambda_gen;
+  int<lower=0> counts_gen_naive[N_gen,G_gen];
+  int<lower=0> counts_gen_geneWise[N_gen,G_gen];
+  vector[N_log_lik] log_lik;
 
-  // Sample gene wise rates
-  for(g in 1:G) lambda_gen[g] = normal_or_gammaLog_rng(lambda_mu, lambda_sigma, is_prior_asymetric);
+  vector[G_gen] lambda_gen;
 
-  // Sample gene wise sample wise abundances
-  for(n in 1:N) for(g in 1:G) {
-    counts_gen_naive[n,g] = neg_binomial_2_log_rng(exposure_rate[n] + lambda_gen[g], sigma);
-    counts_gen_geneWise[n,g] = neg_binomial_2_log_rng(exposure_rate[n] + lambda[g],  sigma);
+  if(generate_quantities) {
+    // Sample gene wise rates
+    for(g in 1:G) lambda_gen[g] = normal_or_gammaLog_rng(lambda_mu, lambda_sigma, is_prior_asymetric);
+
+    // Sample gene wise sample wise abundances
+    for(n in 1:N) for(g in 1:G) {
+      counts_gen_naive[n,g] = neg_binomial_2_log_rng(exposure_rate[n] + lambda_gen[g], sigma);
+      counts_gen_geneWise[n,g] = neg_binomial_2_log_rng(exposure_rate[n] + lambda[g],  sigma);
+    }
   }
 
+  if(generate_log_lik) {
+    for(n in 1:N) {
+      log_lik[n] = neg_binomial_2_log_lpmf(counts[n,] | exposure_rate[n] + lambda, sigma);
+    }
+  }
 
 }

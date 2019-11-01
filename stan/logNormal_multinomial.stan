@@ -43,19 +43,22 @@ data {
   int<lower=0> G;
   int<lower=0> counts[N,G];
   real my_prior[2];
-  int<lower=0, upper=1> omit_data;
   int<lower=0> exposure[N];
 
   // Alternative models
   int<lower=0, upper=1> is_prior_asymetric;
 
   int<lower=0, upper=1> generate_quantities;
+  int<lower=0, upper=1> generate_log_lik;
 
+  //Set to 1 for each sample that is held out
+  int<lower=0, upper=1> holdout[N];
 }
 
 transformed data {
   int<lower=0> N_gen = generate_quantities ? N : 0;
   int<lower=0> G_gen = generate_quantities ? G : 0;
+  int<lower=0> N_log_lik = generate_log_lik ? N : 0;
 }
 
 parameters {
@@ -86,7 +89,11 @@ model {
   for(n in 1:N) theta_z[n] ~ normal(0,1);
 
   // Sample from data
-  if(omit_data==0) for(n in 1:N) counts[n,] ~ multinomial(softmax(theta[n]));
+  for(n in 1:N) {
+    if(holdout[n] == 0) {
+      counts[n,] ~ multinomial(softmax(theta[n]));
+    }
+  }
 
 }
 generated quantities{
@@ -95,6 +102,7 @@ generated quantities{
   vector[G_gen] lambda_gen;
   vector[G_gen] theta_gen_naive[N_gen];
   vector[G_gen] theta_gen_geneWise[N_gen];
+  vector[N_log_lik] log_lik;
 
   if(generate_quantities) {
     // Sample gene wise rates
@@ -106,6 +114,12 @@ generated quantities{
   for(n in 1:N) {
       counts_gen_naive[n,] = multinomial_rng(softmax(theta_gen_naive[n]), exposure[n]);
       counts_gen_geneWise[n,] = multinomial_rng(softmax(theta_gen_geneWise[n]), exposure[n]);
+    }
+  }
+
+  if(generate_log_lik) {
+    for(n in 1:N) {
+      log_lik[n] = multinomial_lpmf(counts[n,] | softmax(theta[n]));
     }
   }
 }
