@@ -3,7 +3,7 @@ title: "Parsing log_bessel_k test results"
 output: html_notebook
 ---
 
-```{r}
+```{r setup}
 library(tidyverse)
 library(cowplot)
 ```
@@ -55,18 +55,52 @@ test_data %>%
   my_plot()
   
 
-test_data %>% 
-  filter(v < 0) %>%
-  mutate(v = -v) %>%
-  my_plot()
+# test_data %>% 
+#   filter(v < 0) %>%
+#   mutate(v = -v) %>%
+#   my_plot()
+
+
+test_data %>% filter(v > 0, is_error) %>%
+  arrange(desc(abs(diff))) %>% 
+  select(v,z,method, diff, value)
   
 cat("Total errors: ", sum(test_data$is_error))
 ```
 
 ```{r}
-test_data %>% filter(type == "ratio") %>%  arrange(desc(abs(diff))) %>% select(v,z,method, type, diff)
+test_data %>% filter(type == "ratio", method == "z_Integral_Gamma", v > 0) %>%  arrange(desc(abs(diff))) %>% select(v,z,method, type, diff)
 test_data %>% filter(z < 1e-5, abs(v) < 1e-5, type == "grad_v")
 ```
+
+```{r}
+test_data %>%
+  filter(v > 0, is_error, type == "ratio") %>%
+  lm(log(v) ~ log(z), .)
+
+test_data %>%
+  filter(v > 0, is_error, type == "ratio") %>%
+  ggplot(aes(x = log(z), y = log(v))) + geom_smooth(method = "lm") + geom_point()
+
+```
+
+
+
+```{r}
+error_fit <- test_data %>% filter(type == "ratio", v > 0) %>% 
+  glm(is_error ~ log(v) + log(z) + log(v) * log(z), . , family = "binomial")
+
+error_fit
+
+test_data %>% filter(type == "ratio", v > 0) %>% mutate(glm_predict =  error_fit$coefficients["(Intercept)"] +  error_fit$coefficients["log(v)"] * log(v) +  error_fit$coefficients["log(z)"] * log(z) +  error_fit$coefficients["log(v):log(z)"] * log(v) * log(z)) %>%
+  ggplot(aes(x = glm_predict, y = is_error)) + geom_point()
+```
+
+```{r}
+
+```
+
+
 
 ```{r}
 v = -85323

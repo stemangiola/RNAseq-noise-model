@@ -92,7 +92,7 @@ T_v asymptotic_large_v(const T_v &v, const double &z) {
 
   // return 0.5 * (log(stan::math::pi()) - log(2) - log(v)) - v * (log(z) -
   // log(2) - log(v));
-  return stan::math::LOG_2 - v * (log(z) - stan::math::LOG_2) + lgamma(v);
+  return lgamma(v) - stan::math::LOG_2 + v * (stan::math::LOG_2 - log(z));
 }
 
 // Formula 10.40.2 from https://dlmf.nist.gov/10.40
@@ -128,8 +128,12 @@ T_v asymptotic_large_z(const T_v &v, const double &z) {
 // referenced from the test code.
 enum class ComputationType { Rothwell, Asymp_v, Asymp_z };
 
-const double rothwell_max_v = 75;
+const double rothwell_max_v = 50;
 const double rothwell_max_log_z_over_v = 300;
+
+const double small_z_factor = 10;
+const double small_z_min_v = 15;
+
 
 inline ComputationType choose_computation_type(const double &v,
                                                const double &z) {
@@ -139,7 +143,9 @@ inline ComputationType choose_computation_type(const double &v,
   const double rothwell_log_z_boundary
     = rothwell_max_log_z_over_v / (v_ - 0.5) - log(2);
 
-  if (v_ < rothwell_max_v && (v_ <= 0.5 || log(z) < rothwell_log_z_boundary)) {
+  if (v_ >= small_z_min_v && z * small_z_factor < sqrt(v_ + 1)) {
+    return ComputationType::Asymp_v;
+  } else if (v_ < rothwell_max_v && (v_ <= 0.5 || log(z) < rothwell_log_z_boundary)) {
     return ComputationType::Rothwell;
   } else if (v_ > z) {
     return ComputationType::Asymp_v;
