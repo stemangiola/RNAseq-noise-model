@@ -1,0 +1,170 @@
+---
+title: "Testing Sichel (GIGP)"
+output: html_notebook
+---
+
+```{r setup}
+library(rstan)
+library(gamlss.dist)
+library(tidyverse)
+library(cowplot)
+library(here)
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = TRUE)
+devtools::load_all()
+```
+
+```{r}
+model_stanc <- stanc(here("stan","poisson_GIG.stan"), allow_undefined = TRUE)
+
+expose_stan_functions(model_stanc, includes = paste0("#include \"", here("dev", "besselk.hpp"),"\""), show_compiler_warnings = TRUE)
+```
+
+```{r, fig.width = 8, fig.height = 8}
+
+comparison <- tibble(y = c(0, 10, 1000, 10000)) %>% 
+  crossing(tibble(mu = exp(-3:15))) %>% 
+  crossing(tibble(sigma = (1:60) / 2)) %>%
+  crossing(tibble(nu = c(-15, -0.9, -0.3, 0, 0.7, 26))) %>%
+  rowwise() %>%
+  mutate(gamlss = tryCatch({dSICHEL(y, mu = mu, sigma = sigma, nu = nu, log = TRUE)}, error = function(e) {NA_real_}),
+         my = sichel_lpmf(y, mu = mu, sigma = sigma, nu = nu),
+         my2 = sichel2_lpmf(y, mu = mu, sigma = sigma, v = nu)) 
+
+comparison <- comparison %>% mutate(error = gamlss - my, error2 = gamlss - my2)
+
+```
+
+```{r}
+comparison %>% 
+  
+  ggplot(aes(x = mu, y = sigma, fill = abs(error))) + geom_raster() + scale_x_log10()  + facet_grid(nu ~ y)  
+
+comparison %>% filter(y  < 10, mu < 100, abs(nu) < 10) %>%
+  
+  ggplot(aes(x = mu, y = sigma, fill = abs(error2))) + geom_raster() + scale_x_log10()  + facet_grid(nu ~ y)  
+
+```
+
+
+```{r}
+comparison %>% filter(!is.na(gamlss ), is.na(my))
+comparison %>% filter(is.na(gamlss ), !is.na(my))
+comparison %>% filter(is.na(gamlss ), is.na(my))
+```
+
+```{r}
+model = stan_model(here("stan","poisson_GIG.stan"), allow_undefined = TRUE, includes = paste0("#include \"", here("dev", "besselk.hpp"),"\"\n")) 
+```
+
+```{r}
+library(gamlss.dist)
+
+#This function implements directly the formula from help(dSICHEL)
+my_dSICHEL <- function(y, mu, nu, sigma) {
+  alpha = sqrt(sigma^-2 + 2 * mu / sigma);
+  mu^y * besselK(alpha, y + nu) / (factorial(y) * (alpha * sigma)^(y + nu) * besselK(1/sigma, nu))
+}
+
+mu <- 1
+sigma <- 1
+nu <- -3
+y <- c(0:10)
+
+#The blue line (direct computation) and black line (dSICHEL) differ
+plot(y, my_dSICHEL(y, mu = mu, nu = nu, sigma = sigma), type = "l", col = "blue", lty = 2, lwd = 3)
+lines(y, dSICHEL(y, mu = mu, nu = nu, sigma = sigma))
+
+#For the special case of Poisson-Inverse Gaussian, the values match 
+nu <- -0.5
+plot(y, my_dSICHEL(y, mu = mu, nu = nu, sigma = sigma), type = "l", col = "blue", lty = 2, lwd = 3)
+lines(y, dSICHEL(y, mu = mu, nu = nu, sigma = sigma))
+
+
+#The difference is even more pronounced when computing on the log scale
+my_log_dSICHEL <- function(y, mu, nu, sigma) {
+  c_log <- log(besselK(x = 1/sigma, nu = nu + 1)) - log(besselK(x = 1/sigma, nu = nu))
+  alpha = sqrt(sigma^-2 + 2 * mu / (sigma * exp(c_log)));
+  #alpha = sqrt(1.0 + 2.0 * sigma * (mu/exp(c_log)))/sigma;
+  log_mu2 <- log(mu) - c_log
+  #y * log(mu) + log(besselK(x = alpha, nu = y + nu)) - lgamma(y + 1) -(y + nu) * (log(alpha) + log(sigma)) - log(besselK(x = 1/sigma, nu = nu))
+  y * log_mu2 + log(besselK(x = alpha, nu = y + nu)) - lgamma(y + 1) -(y + nu) * (log(alpha) + log(sigma)) - log(besselK(x = 1/sigma, nu = nu))
+}
+
+mu <- 1
+sigma <- 1
+nu <- -3
+y <- c(0:30)
+plot(y, my_log_dSICHEL(y, mu = mu, nu = nu, sigma = sigma), type = "l", col = "blue", lty = 2, lwd = 3)
+lines(y, dSICHEL(y, mu = mu, nu = nu, sigma = sigma, log = TRUE))
+
+
+```
+
+```{r, fig.width=8, fig.height=5}
+compare_data <- tibble(mu = 15, sigma = 1) %>% 
+  crossing(tibble(y = seq(from = 0, to = 100, by = 1))) %>% 
+  crossing(tibble(nu = seq(from = -10, to = 10, by = 1)))%>% 
+  rowwise() %>%
+  mutate(my_ld = sichel2_lpmf(y = y, mu = mu, v = nu, sigma = sigma), 
+         my_ld_R = my_log_dSICHEL(y = y, mu = mu, nu = nu, sigma = sigma), 
+         ld = dSICHEL(x = y, mu = mu, nu = nu, sigma = sigma, log = TRUE)) 
+
+compare_data %>% 
+  gather("type", "value", my_ld, ld) %>%
+  ggplot(aes(x = y, y = value, color = nu, group = nu)) + geom_line() + facet_wrap(~type)
+```
+```{r}
+y <- 0:1000
+mu = 1
+v = 
+sigma = 1
+logsumexp(my_log_dSICHEL(y = y, mu = mu, nu = v, sigma = sigma))
+stan_lpmf <- numeric(length(y)) 
+for(i in 1:length(y)) {
+  stan_lpmf[i] <- sichel2_lpmf(y[i], mu = mu, v = v, sigma = sigma)
+}
+logsumexp(stan_lpmf)
+logsumexp(dSICHEL(x = y, mu = mu, nu = v, sigma = sigma, log = TRUE))
+```
+
+```{r}
+tibble(sigma = c(0.5, 1, 5)) %>% crossing(v = seq(from = -30, to = 30, by = 0.5)) %>% 
+  mutate(log_R = log(besselK(x = 1/sigma, nu = v + 1)) - log(besselK(x = 1/sigma, nu = v)) ) %>%
+  ggplot(aes(x = v, y = log_R)) + geom_line() + facet_wrap(~sigma, scales = "free")
+```
+
+
+
+
+
+```{r}
+N <- 20
+mu <- 1
+sigma <- 1
+nu <- -0.5
+data <- list(N = N, y = rSICHEL(N, mu = mu, sigma = sigma, nu = nu), method = 1)
+
+fit <- sampling(model, data = data)
+fit
+
+data$method = 2
+fit2 <- sampling(model, data = data)
+fit2
+
+get_elapsed_time(fit)
+get_elapsed_time(fit2)
+
+```
+
+```{r}
+N <- 1e5
+mu <- 1
+sigma <- 1
+nu <- -0.5
+direct <- rSICHEL(N, mu = mu, sigma = sigma, nu = nu)
+pp <- rpois(N, rGIG(N, mu = mu, sigma = sigma, nu = nu))
+hist(direct)
+hist(pp)
+```
+

@@ -195,6 +195,7 @@ get_bloodRNA = function(){
 
     # Format cell types
     mutate(`Cell type` = ifelse(grepl("_mDC_", file), "dendritic_myeloid", `Cell type`)) %>%
+
     mutate(`Cell type` = ifelse(grepl("_CD4_Tcells_", file), "t_CD4", `Cell type`)) %>%
     mutate(`Cell type` = ifelse(grepl("_Eosinophils_", file), "eosinophil", `Cell type`)) %>%
     mutate(`Cell type` = ifelse(grepl("_Memory_Bcells_", file), "b_memory", `Cell type`)) %>%
@@ -466,6 +467,7 @@ get_monocytes_brain = function(){
   distinct %>%
   ggplot(aes(x = `Dim 1`, y = `Dim 2`)) + geom_point()
 
+
 }
 
 
@@ -503,6 +505,7 @@ load("big_data/tibble_cellType_files/immune_singapoor.RData")
 load("big_data/tibble_cellType_files/N52_TME.RData")
 load("big_data/tibble_cellType_files/influenza_immune.RData")
 load("big_data/tibble_cellType_files/immune_skin.RData")
+
 
 ENCODE %>%
   bind_rows(BLUEPRINT) %>%

@@ -45,14 +45,14 @@ data{
 }
 parameters{
   real mu;
-  real<lower=0> sigma;
+  real sigma;
   real<lower=0, upper=1> nu;
 }
 model {
   mu ~ normal(0,2);
   sigma ~ student_t(3, 0, 1);
   nu ~ beta(1,5);
-  y ~ poisson_tweedie_log(mu, sigma, nu);
+  y ~ poisson_tweedie_log(mu, exp(sigma), nu);
 
 }
 

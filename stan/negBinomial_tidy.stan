@@ -1,7 +1,7 @@
 functions{
   	real gamma_log_lpdf(vector x_log, real a, real b){
 
-      // This function is the  probability of the log gamma funnction
+      // This function is the  probability of the log gamma function
       // in case you have data that is aleady in log form
 
   		vector[rows(x_log)] jacob = x_log; //jacobian

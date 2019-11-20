@@ -7,7 +7,7 @@ output: html_document
 
 ```{r setup, include=FALSE}
 # Import libraries
-setwd("~/PostDoc/RNAseq-noise-model/docs")
+#setwd("~/PostDoc/RNAseq-noise-model/docs")
 
 #setwd("/wehisan/bioinf/bioinf-data/Papenfuss_lab/projects/mangiola.s/PostDoc/RNAseq-noise-model")
 set.seed(13254)
@@ -60,17 +60,35 @@ counts =
 	foreach(
 		f = dir(
 			path = 	here("big_data", "tibble_cellType_files"), 
-			pattern="cellTypes_t_",
+			pattern="cellTypes_t",
 			full.names = T
 		),
 		.combine = bind_rows
 	) %dopar% {
 		read_csv(f) %>% 
 	    mutate_at(vars(one_of('sample')), as.character) %>%
-	    mutate_at(vars(one_of('isoform')), as.character) 
-	}  %>%
+	    mutate_at(vars(one_of('isoform')), as.character)
+	} %>%
 
   filter(symbol %>% is.na %>% `!`) %>%
+  filter(`Cell type formatted` %>% is.na %>% `!`) %>%
+  
+  # Setup level 1 names
+  mutate(
+    `level 1` =
+      ifelse(
+        grepl("^b_|^t_|natural_killer|monocyte|mono_|myeloid|macrophage|natural_killer|nk|neutrophil|eosinophil", `Cell type formatted`), "immune_cell",
+        ifelse(
+          `Cell type formatted` %in% c("epithelial", "endothelial", "fibroblast"),
+        `Cell type formatted`,
+        NA
+      )
+    )
+  ) %>%
+  filter(`level 1` %>% is.na %>% `!`) %>%
+  mutate(`symbol original` = symbol) %>%
+  unite(symbol, c("level 1", "symbol"), remove = F) %>%
+
   
 	# Median redundant
   do_parallel_start(40, "symbol") %>%
@@ -80,7 +98,7 @@ counts =
   		library(magrittr)
     	
     	(.) %>%
-  			group_by(sample, symbol, `Cell type formatted`,  `Data base`) %>%
+  			group_by(sample, symbol, `level 1`, `Cell type formatted`,  `Data base`) %>%
   			summarise(`read count` = `read count` %>% median(na.rm = T)) %>%
   			ungroup() 
   }) %>%
@@ -120,9 +138,18 @@ counts =
   		  
   		  `anova p-value` = 
   		      ifelse(
-  		        (.) %>% distinct(`Data base`) %>% nrow > 1,
+  		        (.) %>% distinct(`Data base`) %>% nrow > 1 & (.) %>% distinct(`Cell type formatted`) %>% nrow > 1 ,
   		        (.) %>% aov(`read count normalised log` ~ `Cell type formatted` + `Data base`, .) %>% anova %$% `Pr(>F)` %>% `[` (1),
-  		        (.) %>% aov(`read count normalised log` ~ `Cell type formatted`, .) %>% anova %$% `Pr(>F)` %>% `[` (1)
+  		        ifelse(
+  		          (.) %>% distinct(`Data base`) %>% nrow > 1,
+  		          (.) %>% aov(`read count normalised log` ~ `Data base`, .) %>% anova %$% `Pr(>F)` %>% `[` (1),
+  		          ifelse(
+  		             (.) %>% distinct(`Cell type formatted`) %>% nrow > 1,
+  		          (.) %>% aov(`read count normalised log` ~ `Cell type formatted`, .) %>% anova %$% `Pr(>F)` %>% `[` (1),
+  		          NA
+  		          )
+  		        )
+  		        
   		      ) 
 		    )
 		  ) %>%
@@ -149,14 +176,13 @@ counts =
 Inference 
 
 ```{r predict_values cell_type, cache=TRUE}
-n_genes = 5000
+n_genes = 100
 
-n_genes = 5000
 
 set.seed(1325364)
 counts_stan = 
   counts %>%
-  #filter(!filt_for_calc) %>%
+  filter(!filt_for_calc) %>%
   filter(!`hard bimodality`) %>%
   
   # Make DF squared
@@ -165,10 +191,11 @@ counts_stan =
   #
   
   #filter(symbol%in%c("A2M-AS1", "A1BG")) %>%
+  #filter(`level 1` == "immune_cell") %>%
   inner_join( (.) %>% distinct(symbol) %>% sample_n(n_genes) ) %>%
   
   # Add sample idx
-  mutate(sample_idx = as.integer(sample)) 
+  mutate(sample_idx = as.integer(factor(sample)))
 
 data_for_stan = counts_stan %>%
   left_join(
@@ -197,10 +224,10 @@ data_for_stan = counts_stan %>%
 )
 
 fileConn<-file("~/.R/Makevars")
-writeLines(c("CXX14FLAGS += -O3"), fileConn)
+writeLines(c("CXX14FLAGS += -O3",  "CXX14FLAGS += -fPIC"), fileConn)
 close(fileConn)
 nb_model = stan_model(here("stan",sprintf("%s.stan", "negBinomial_tidy")))
-# fit = 
+# fit =
 #   sampling(
 #       nb_model,
 #     data = data_for_stan,
@@ -300,7 +327,7 @@ data_for_stan_MPI = list(
 )
 
 fileConn<-file("~/.R/Makevars")
-writeLines(c("CXX14FLAGS += -O3","CXX14FLAGS += -DSTAN_THREADS", "CXX14FLAGS += -pthread"), fileConn)
+writeLines(c("CXX14FLAGS += -O3", "CXX14FLAGS += -fPIC", "CXX14FLAGS += -DSTAN_THREADS", "CXX14FLAGS += -pthread"), fileConn)
 close(fileConn)
 Sys.setenv("STAN_NUM_THREADS" = 14)
 nb_model_MPI = stan_model(here("stan",sprintf("%s.stan", "negBinomial_tidy_MPI")))
@@ -309,37 +336,42 @@ fit_MPI =
   sampling(
       nb_model_MPI,
     data = data_for_stan_MPI,
-    chains=3, iter=300, warmup=200
+    chains=3, iter=300, warmup=200, save_warmup = FALSE
 )
-save(fit_MPI, file="fit_MPI_05032019.RData")
+#save(fit_MPI, file="fit_MPI_11032019.RData")
 Sys.time()
 
 #fit_parsed = fit_MPI %>% spread_draws(lambda[G], sigma[G], sigma_raw[G], sigma_raw_gen[G], lambda_gen[G])
 
-fit_parsed = fit_MPI %>% summary() %$% summary %>% as_tibble(rownames="par") %>% filter(grepl("lambda|sigma", par)) %>% separate(par, c("par", "G"), sep="\\[|\\]") %>% select(par, G, "50%") %>% spread(par, "50%") %>% mutate(G = G %>% as.integer)
-
-
-
-fit_parsed %>%
-  mean_qi() %>%
-  left_join(data_for_stan$symbols %>% mutate(G=1:n()) ) %>% left_join(
-    fit_MPI_parsed %>%
-    mean_qi() %>%
-    left_join(data_for_stan_MPI$symbols %>% gather(idx_MPI, symbol) %>%
-                drop_na() %>%
-                arrange(idx_MPI, symbol) %>% mutate(G=1:n()) ) ,
-    by = c("symbol")
+fit_parsed = 
+  fit_MPI %>% 
+  summary() %$% summary %>% 
+  as_tibble(rownames="par") %>% 
+  filter(grepl("lambda|sigma", par)) %>% 
+  separate(par, c("par", "G"), sep="\\[|\\]") %>% 
+  filter(par %in% c("lambda", "sigma", "sigma_raw")) %>%
+  select(par, G, "50%") %>% spread(par, "50%") %>%
+  mutate(G = G %>% as.integer) %>%
+  left_join(
+    data_for_stan_MPI$symbols %>% 
+      gather(idx_MPI, symbol) %>%
+    drop_na() %>%
+    arrange(idx_MPI, symbol) %>% mutate(G=1:n()) 
   ) %>%
-{ggplot((.),  aes(x = lambda.x, y = lambda.y , label=symbol , idx_MPI=idx_MPI, color=symbol=="AKR1C3")  ) + geom_point()} %>% plotly::ggplotly()
+  left_join( counts_stan_MPI %>% distinct(symbol, `level 1`)  ) %>%
+  mutate(
+    symbol = 
+      gsub(
+        fit_parsed %>% 
+          distinct(`level 1`) %>%
+          pull(1) %>% 
+          paste("_", sep="") %>%
+          paste(collapse="|") ,
+        "", 
+        symbol
+        )
+    )
 
-
-    fit_parsed %>%
-    mean_qi() %>%
-    left_join(data_for_stan_MPI$symbols %>% gather(idx_MPI, symbol) %>%
-                drop_na() %>%
-                mutate(G=1:n()) )  %>%
-      left_join(counts_stan_MPI %>% select(symbol, `read count normalised`) %>% group_by(symbol) %>% summarise(`read count normalised` = `read count normalised` %>% `+` (1) %>% log %>% mean)) %>%
-{ggplot((.),  aes(x = lambda, y = `read count normalised` , label=symbol , idx_MPI=idx_MPI, color=symbol=="AKR1C3")  ) + geom_point()} %>% plotly::ggplotly()
 
 
 ```
@@ -370,9 +402,7 @@ fit_parsed %>%
         },
         geom="line"
     ) +
-  # geom_abline(slope = -0.35, intercept = 0.50) +
-  #stat_smooth( method="lm", formula= (y ~ exp(x)) ) +
-  scale_y_continuous(trans="log") + my_theme
+   my_theme
 		
 fit_parsed %>% 
   #median_qi() %>%   

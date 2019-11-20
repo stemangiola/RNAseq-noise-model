@@ -48,10 +48,7 @@ my_theme =
 source("https://gist.githubusercontent.com/stemangiola/90a528038b8c52b21f9cfa6bb186d583/raw/dbd92c49fb03fb05ab0b465704b99c0a39e654d5/transcription_tool_kit.R")
 source("https://gist.githubusercontent.com/stemangiola/dd3573be22492fc03856cd2c53a755a9/raw/e4ec6a2348efc2f62b88f10b12e70f4c6273a10a/tidy_extensions.R")
 
-PIG_model =
-  rstan::stan_model(
-    here::here("stan",sprintf("%s.stan", "poisson_inverseGaussian"))
-  )
+
 
 ```
 
@@ -64,21 +61,34 @@ counts_noisy = read_csv("t_cells_with_error_qq_plot_means.csv")
 ```{r predict_values, cache=TRUE, fig.dim = c(9, 9)}
 
 	counts_noisy %>%
-  inner_join((.) %>% distinct(symbol, `gene error mean`) %>% arrange(`gene error mean` %>% desc) %>% head(n=25)) %>%
+  inner_join((.) %>% distinct(symbol, `gene error mean`) %>% arrange(`gene error mean` %>% desc) %>% head(n=2) %>% tail(n=1)) 
   arrange(`gene error mean` %>% desc) %>%
   mutate(symbol = factor(symbol, unique(symbol))) %>%
 
   #filter(symbol=="FOSB") %>%
   
   # Infer NB
+
+	#do_parallel_start(40, "symbol") %>%
   group_by(symbol) %>%
    do({
  
      `%>%` = magrittr::`%>%`
 		library(tidyverse)
 		library(magrittr)
+   PIG_model =
+    rstan::stan_model(
+    "/wehisan/bioinf/bioinf-data/Papenfuss_lab/projects/mangiola.s/PostDoc/RNAseq-noise-model/stan/poisson_inverseGaussian.stan" #  here::here("stan",sprintf("%s.stan", "poisson_inverseGaussian"))
+    )
+
+    PT_model =
+      rstan::stan_model(
+       "/wehisan/bioinf/bioinf-data/Papenfuss_lab/projects/mangiola.s/PostDoc/RNAseq-noise-model/stan/poisson_tweedie.stan" #" here::here("stan",sprintf("%s.stan", "poisson_tweedie"))
+      )
+browser()
+
      # lines(seq(0,1000, 10) , sapply(seq(0,1000, 10)  , gamlss.dist::dSICHEL,mu= 100, sigma=0.05, nu=-0.3, log=T))
-    #browser()
+    
     # Negative binomial
     fit_NB =  (.) %>%
        pull(`read count normalised`) %>%
@@ -86,8 +96,16 @@ counts_noisy = read_csv("t_cells_with_error_qq_plot_means.csv")
     
     #PIG
     fit_PIG = 
-      optimizing(
+      rstan::optimizing(
         PIG_model, 
+        data = list(N = (.) %>% nrow, y = (.) %>% pull(`read count normalised`)),
+        init = list(mu = (.) %>% pull(`read count normalised`) %>% `+` (1) %>% log %>% mean)
+        ) %$% par
+    
+        #PIG
+    fit_PT = 
+      rstan::optimizing(
+        PT_model, 
         data = list(N = (.) %>% nrow, y = (.) %>% pull(`read count normalised`)),
         init = list(mu = (.) %>% pull(`read count normalised`) %>% `+` (1) %>% log %>% mean)
         ) %$% par
@@ -98,6 +116,15 @@ counts_noisy = read_csv("t_cells_with_error_qq_plot_means.csv")
     #    pull(`read count`) %>%
     #   MASS::fitdistr(gamlss.dist::dSICHEL, list(mu= 100, sigma=0.1, nu=-5), upper = c(4000, 20, 0),  lower=c(0, 0.0001, -10))
 
+    qPT = function(pp, mu, sigma, nu){
+      tweeDEseq::rPT(100000, mu = mu, D =sigma, a = nu, max=10000) %>% 
+      sort %>% 
+      `[` (
+          pp %>% 
+            multiply_by(100000) %>% 
+            round
+        )
+    }
     
     (.) %>%
       arrange(`read count normalised`) %>%
@@ -118,7 +145,16 @@ counts_noisy = read_csv("t_cells_with_error_qq_plot_means.csv")
       			sigma=fit_PIG[1]
       			
       	) 
-      )
+      ) %>%
+      mutate(
+      	predicted_PT = 
+      		qPT(
+      			ppoints(`read count normalised`), 
+      			mu = fit_PT[1] %>% exp, 
+      			sigma = fit_PT[2], 
+      			nu = fit_PT[3]
+      	) 
+      ) 
     #%>%
       # mutate(
       # 	predicted_SH = 
@@ -139,7 +175,7 @@ counts_noisy = read_csv("t_cells_with_error_qq_plot_means.csv")
     #     )
       
  	}) %>%
-  collect() %>%
+	do_parallel_end() %>%
 	ungroup() %>%
 	gather(model, predicted, contains("predicted")) %>%
 	ggplot(aes(x=`predicted` + 1, y=`read count normalised` + 1, label=symbol, color=model)) + 
@@ -161,7 +197,7 @@ shards = 56
 n_genes = 100
 counts_source = "Acute_Myeloid_Leukemia_Primary_Blood_Derived_Cancer_-_Peripheral_Blood"
 
-data_for_stan_MPI =
+xx =
   
   read_csv(here(
     "big_data",
@@ -205,9 +241,7 @@ data_for_stan_MPI =
   inner_join((.) %>% distinct(symbol) %>% sample_n(n_genes)) %>%
   
   # Add sample idx
-  mutate(sample_idx = as.integer(factor(sample)))
-
-xx = data_for_stan_MPI %>%
+  mutate(sample_idx = as.integer(factor(sample))) %>%
   left_join((.) %>% group_by(symbol) %>% summarise(s = `read count normalised` %>% sum) %>% arrange(s)) %>%
   filter(s > 0) %>%
   do_parallel_start(40, "symbol") %>%
@@ -215,7 +249,7 @@ xx = data_for_stan_MPI %>%
     `%>%` = magrittr::`%>%`
     library(tidyverse)
     library(magrittr)
-library(rstan)
+    library(rstan)
     PIG_model =
   rstan::stan_model(
     here::here("stan",sprintf("%s.stan", "poisson_inverseGaussian"))
@@ -302,13 +336,11 @@ library(rstan)
 ```
 
 ```{r, fig.dim = c(9, 9)}
-(xx %>%
+xx %>%
   distinct(symbol, model, `gene error mean`) %>%
   arrange(`gene error mean` %>% desc) %>%
   mutate(symbol = factor(symbol, unique(symbol))) %>%
   ggplot(aes(x = symbol, y = `gene error mean`, color = model)) + geom_point() + my_theme
-) 
-
 
 xx %>% 
   filter(symbol %in% c("ENSG00000242574.7",  "ENSG00000256338.2", "ENSG00000151612.14",  "ENSG00000137460.7")) %>%

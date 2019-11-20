@@ -270,27 +270,7 @@ my_theme =
 ```
 
 ```{r}
-data_for_stan = list(
-  N = N,
-  G = G,
-  counts =
-    counts_tidy %>%
-    select(ens_iso,`read count`,sample) %>%
-    spread(ens_iso, `read count`) %>%
-    select(-sample) %>%
-    as.matrix(),
-
-  # Info on data set
-  my_prior = c(0,5),
-  omit_data = 0,
-  generate_quantities = 1,
-  is_prior_asymetric = 0,
-  exposure =
-    counts_tidy %>%
-    group_by(sample) %>%
-    summarise(`Total counts` = sum(`read count`)) %>%
-    pull(`Total counts`)
-)
+data_for_stan = data_for_stan_from_tidy(N, G, counts_tidy)
 ```
 
 Set model names

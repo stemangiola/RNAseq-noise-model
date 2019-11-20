@@ -46,3 +46,7 @@ dev/Thumbs.db
 
 local_temp_data/*
 data/*
+
+# filter chache
+*cache*
+.Rproj.user

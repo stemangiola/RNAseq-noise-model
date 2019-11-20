@@ -1,0 +1,217 @@
+---
+title: "Testing Waring"
+output: html_notebook
+---
+
+```{r setup}
+library(rstan)
+library(gamlss.dist)
+library(tidyverse)
+library(cowplot)
+library(here)
+theme_set(theme_cowplot())
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = TRUE)
+devtools::load_all()
+```
+
+
+Testing different parametrizations
+
+Direct parametrization.
+
+```{r}
+gwaring_lpmf <- function(y, mu, k, rho) {
+  a <- mu * (rho - 1) / k
+  lgamma(a + rho) + lgamma(k + rho) - lgamma(rho) - lgamma(a + k + rho) + lgamma(a + y) - lgamma(a) + lgamma(k + y) - lgamma(k) - lgamma(a + k + rho + y) + lgamma(a + k + rho) - lgamma(y + 1)
+}
+
+
+tibble(mu = 50) %>% 
+  crossing(tibble(y = seq(from = 0, to = 1000, by = 1))) %>% 
+  crossing(tibble(k = c(0.1, 0.5, 1, 3, 5, 10)))%>% 
+  crossing(tibble(rho = seq(1.1, 10, length.out = 5)))%>% 
+  mutate(ld = gwaring_lpmf(y, mu, k, rho))  %>%
+    ggplot(aes(x = y, y = ld, color = rho, group = rho)) + geom_line() + facet_wrap(~k, ncol = 3, labeller = "label_both")
+
+```
+
+## Decomposing variance (looks best so far)
+
+The main point is that for $Y \sim Waring(\mu, \rho, k)$ you can decompose the variance as:
+
+$$
+Var(Y) = \mu + \tau\mu + \frac{\mu^2}{\phi} \\
+\tau = \frac{k + 1}{\rho - 2} \\
+\phi = \frac{k ( \rho - 2 )} {k + \rho - 1}
+$$ 
+
+
+So as $\tau \rightarrow 0$ the distribution approaches $NB(\mu, \phi)$. Eventually the $\tau$ parameter controls the shape of the tail in a neat way:
+
+
+```{r}
+main_data <- tibble(mu = 50) %>% 
+  crossing(tibble(y = seq(from = 0, to = 1000, by = 1))) %>% 
+  crossing(tibble(phi = c(1, 5, 10)))%>% 
+  crossing(tibble(tau = c(0.001, 0.1, 1, 10))) %>% 
+  mutate(
+    k = (tau + 1)*phi,
+    rho = (phi + 1) / tau + phi + 2,
+    ld = gwaring_lpmf(y, mu = mu, k = k , rho = rho))
+
+nb_data <- main_data %>% filter(y %% 100 == 0) %>%
+  mutate(
+         nb_dens = dnbinom(y, mu = mu, size = phi, log = TRUE)
+         )
+
+main_data %>%
+  ggplot(aes(x = y, y = ld, color = as.factor(phi), group = phi)) + 
+      geom_point(data = nb_data, aes(y = nb_dens, shape = as.factor(phi))) +
+      geom_line() + 
+      facet_wrap(~tau, ncol = 2, labeller = "label_both", scales = "free_y")
+```
+
+
+The lines show the Waring lpdf, the points are the NB lpdf with the same $\mu$ and $\phi$.
+
+The reverse transformation is:
+
+https://www.wolframalpha.com/input/?i=solve+for+k%2C+rho+%3A+tau+%3D+%28k+%2B+1%29%2F%28rho+-+2%29%3B+phi+%3D+k+*+%28rho+-+2%29+%2F+%28k+%2B+rho++-1%29
+
+
+$$
+k = (\tau + 1) \phi \\
+\rho = \frac{\phi + 1}{\tau} + \phi + 2
+$$
+
+For $\tau, \phi > 0$. This parametrization doesn't allow you to have $\rho \leq 2$ but that is IMHO OK, because in this case the distribution has infinite variance (and for $\rho \leq 1$ the mean is not defined as well) - which seems mostly undesirable anyway.
+
+
+
+
+
+##  Matching the mean and variance of the underlying beta prime distribution
+
+https://en.wikipedia.org/wiki/Beta_prime_distribution
+https://www.wolframalpha.com/input/?i=solve+for+r%2Ck%3A+x+%3D+r+%2F+%28k+-+1%29%3B+y+%3D+r%28r+%2B+k+-1%29+%2F%28%28k+-2%29+*+%28k+-+1%29%5E2%29
+
+```{r}
+
+
+
+tibble(mu = 50) %>% 
+  crossing(tibble(y = seq(from = 0, to = 1000, by = 1))) %>% 
+  crossing(tibble(mu_beta = c(0.1, 0.5, 1, 3, 5, 10)))%>% 
+  crossing(tibble(var_beta = 10^seq(-2, 3))) %>% 
+  mutate(
+         rho = mu_beta * (mu_beta ^ 2 + mu_beta + var_beta) / var_beta,
+         k = (mu_beta ^ 2 + mu_beta + var_beta) / var_beta,
+         ld = gwaring_lpmf(y, mu, k = k , rho = rho),
+         )  %>%
+    ggplot(aes(x = y, y = ld, color = mu_beta, group = mu_beta)) + 
+      geom_line() + 
+      facet_wrap(~var_beta, ncol = 3, labeller = "label_both", scales = "free_y")
+
+
+
+```
+
+```{r}
+main_data <- tibble(mu = 50) %>% 
+  crossing(tibble(y = seq(from = 0, to = 1000, by = 1))) %>% 
+  crossing(tibble(mu_beta = c(1, 5, 10)))%>% 
+  crossing(tibble(var_beta = c(0.001, 0.1, 1))) %>% 
+  mutate(
+         rho = mu_beta * (mu_beta ^ 2 + mu_beta + var_beta) / var_beta,
+         k = (mu_beta ^ 2 + mu_beta + var_beta) / var_beta,
+         ld = gwaring_lpmf(y, mu, k = k , rho = rho),
+         )  
+
+nb_data <- main_data %>% filter(y %% 50 == 0) %>%
+  mutate(
+         variance = mu * (1 + (k + 1)/(rho - 2) + mu * (k + rho - 1) / ((rho-2) * k)),
+         phi = mu ^ 2 / (variance - mu),
+         nb_dens = dnbinom(y, mu = mu, size = phi, log = TRUE)
+         )
+
+main_data %>%
+  ggplot(aes(x = y, y = ld, color = as.factor(mu_beta), group = mu_beta)) + 
+      geom_point(data = nb_data, aes(y = nb_dens, shape = as.factor(mu_beta))) +
+      geom_line() + 
+      facet_wrap(~var_beta, ncol = 3, labeller = "label_both", scales = "free_y")
+```
+
+
+
+
+```{r}
+# tibble(mu = 50) %>% 
+#   crossing(tibble(y = seq(from = 0, to = 1000, by = 1))) %>% 
+#   crossing(tibble(mu_beta = c(0.01, 0.1, 0.3, 0.5, 0.7, 0.9,0.99)))%>% 
+#   crossing(tibble(prec_beta = 10^seq(-2, 3))) %>% 
+#   mutate(
+#       rho = mu_beta * prec_beta,
+#       k = prec_beta - rho,
+#       ld = gwaring_lpmf(y, mu, k = k, rho = rho))  %>%
+#     ggplot(aes(x = y, y = ld, color = mu_beta, group = mu_beta)) + geom_line() + facet_wrap(~prec_beta, ncol = 3, labeller = "label_both", scales = "free_y")
+```
+
+```{r}
+rgwaring2 <- function(n, mu, phi, tau) {
+   k <-  (tau + 1)*phi
+   rho <-  (phi + 1) / tau + phi + 2
+   a <-  mu * (rho - 1) / k
+
+   v_logit <- rbeta(n, k, rho)
+   
+   v <-  v_logit / (1 - v_logit)
+   neg_bin_mu = a * v
+   rnbinom(n, mu = neg_bin_mu, size = a)
+}
+
+gwaring2_lpmf <- function(y, mu, phi, tau) {
+   k <-  (tau + 1)*phi
+   rho <-  (phi + 1) / tau + phi + 2
+   a <-  mu * (rho - 1) / k
+   gwaring_lpmf(y, mu, rho, k)
+}
+
+mu <- 100
+phi <- 8
+tau <- 3
+
+rng_vals <- rgwaring2(1e6, mu, phi, tau)
+cat("Expected mean: ", mu, " actual: ", mean(rng_vals),"\n")
+cat("Expected variance: ", mu + tau * mu + mu^2 / phi, " actual: ", var(rng_vals),"\n")
+
+density_points <- seq(0, quantile(rng_vals, 0.99), length.out = 100)
+
+data.frame(x = rng_vals) %>% ggplot(aes(x)) + geom_density(kernel = "optcosine", adjust = 3) + geom_line(aes(x = x, y = y), data = data.frame(x = density_points, y = exp(gwaring2_lpmf(density_points, mu, phi, tau))), color = "blue")
+```
+
+
+```{r}
+test_model <- stan_model(here("stan", "waring_simple_test.stan"))
+```
+
+```{r}
+generator <- function(N) {
+  function() {
+    mu <- rlnorm(1, 3, 1)
+    phi <- 1/sqrt(abs(rnorm(1, 0, 1)))
+    tau <- abs(rnorm(1, 0, 5))
+    
+    list( true = list(mu = mu, phi = phi, tau = tau), 
+          observed = list(N = N, y = rgwaring2(N, mu, phi, tau)))
+  }
+}
+
+sbc_res <- sbc(test_model, generator(100), N_steps = 100)
+
+```
+
+
+```{r}
+plot_sbc_params(sbc_res$params)
+```

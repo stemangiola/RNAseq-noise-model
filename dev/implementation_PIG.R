@@ -760,8 +760,8 @@ library(rstan); library(tidyverse)
 
  rstan::sampling(
    tweedie_model,
-   data = list(N=100, y= tweeDEseq::rPT(100, mu= 100, D=5, a=0.95, max=10000)),
+   data = list(N=100, y= tweeDEseq::rPT(100, mu= 100, D=5, a=0.1, max=10000)),
    chains=3, iter=400, cores=4
- ) %>% traceplot
+ ) %>% summary %$% summary
 
 
