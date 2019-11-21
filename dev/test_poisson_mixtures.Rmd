@@ -1,0 +1,426 @@
+---
+title: "Generated quantities"
+output: html_notebook
+---
+
+This notebook display the generated quantities of each model, with no data imput
+
+```{r setup}
+# Import libraries
+
+set.seed(13254)
+
+# Import libraries
+library(tidyverse)
+library(magrittr)
+library(rstan)
+library(tidybayes)
+library(here)
+library(foreach)
+library(doParallel)
+registerDoParallel()
+# library(future)
+# plan(multiprocess)
+
+rstan_options(auto_write = TRUE)
+options(mc.cores = parallel::detectCores())
+#Sys.setenv(USE_CXX14 = 1)
+#devtools::install(quick = TRUE) #The PKG needs to be installed for sampling_multi to work
+```
+
+Setting global variables
+
+```{r}
+
+N = 20
+G = 100
+counts_source = "Acute_Myeloid_Leukemia_Primary_Blood_Derived_Cancer_-_Peripheral_Blood"
+
+# Evaluate whether to recompute input data frame
+temp_file_counts = here("local_temp_data",paste0("subset_", counts_source,".rds"))
+if(!file.exists(temp_file_counts)) {
+  recompute_counts_tidy = TRUE
+} else {
+  counts_data <- readRDS(temp_file_counts)
+  if(counts_data$N != N || counts_data$G != G) {
+    recompute_counts_tidy = TRUE
+  } else {
+    counts_tidy = counts_data$counts_tidy
+    recompute_counts_tidy = FALSE
+  }
+}
+
+if(recompute_counts_tidy) {
+  # Import gene transcription data set
+  counts_tidy =
+    read_csv(here("big_data", "tibble_TCGA_files", paste0(counts_source, ".csv"))) %>%
+    filter(sample %in% ( (.) %>% distinct(sample) %>% head(n=N) %>% pull(sample)) ) %>%
+    filter(ens_iso %in% ( (.) %>% distinct(ens_iso) %>% head(n=G) %>% pull(ens_iso)) ) %>%
+    mutate_if(is.character, as.factor) %>%
+
+    # Add numerical indexes
+    left_join(
+      (.) %>%
+        distinct(ens_iso) %>%
+        arrange(ens_iso) %>%
+        mutate(ens_iso_idx = 1:n())
+    ) %>%
+    left_join(
+      (.) %>%
+        distinct(sample) %>%
+        arrange(sample) %>%
+        mutate(sample_idx = 1:n())
+    )
+
+  counts_data = list(N = N, G = G, counts_tidy = counts_tidy)
+  saveRDS(counts_data, file = temp_file_counts)
+}
+# Produce input for Stan
+
+```
+
+Wrappers and utilities
+
+```{r}
+source(here("R", "evaluation_tools.R"))
+check_return = function(fit){
+  fit %>% check_all_diagnostics()
+  fit
+}
+
+sampling_check_return = function(model, cores = 4, iter = 500, ...){
+  sampling(model, cores = cores, iter = iter, ...) %>% check_return
+}
+
+# Set theme plots
+my_theme = 	
+	theme_bw() +
+	theme(
+		panel.border = element_blank(),
+		axis.line = element_line(),
+		panel.grid.major = element_line(size = 0.2),
+		panel.grid.minor = element_line(size = 0.1),
+		text = element_text(size=12),
+		legend.position="bottom",
+		aspect.ratio=1,
+		axis.text.x = element_text(angle = 90, hjust = 1),
+		strip.background = element_blank(),
+		axis.title.x  = element_text(margin = margin(t = 10, r = 10, b = 10, l = 10)),
+		axis.title.y  = element_text(margin = margin(t = 10, r = 10, b = 10, l = 10))
+	)
+
+
+```
+
+```{r}
+data_for_stan = list(
+  N = N,
+  G = G,
+  counts =
+    counts_tidy %>%
+    select(ens_iso,`read count`,sample) %>%
+    spread(ens_iso, `read count`) %>%
+    select(-sample) %>%
+    as.matrix(),
+
+  # Info on data set
+  my_prior = c(0,5),
+  omit_data = 0,
+  exposure =
+    counts_tidy %>%
+    group_by(sample) %>%
+    summarise(`Total counts` = sum(`read count`)) %>%
+    pull(`Total counts`)
+)
+```
+
+Set model names
+
+```{r}
+# model_names =
+#   dir(path = here("stan"), pattern = ".stan") %>%
+#   gsub("\\.stan", "", .)
+model_names = c(
+  "negBinomial",
+  "multinomial",
+  "dirichlet_multinomial",
+  "logNormal_multinomial",
+  "logStudent_multinomial"
+  )
+
+```
+
+Compile all models
+
+```{r, echo=FALSE}
+models =
+  foreach(model_name = model_names) %do% {
+    library(rstan) #On Windows, %dopar%-ed code does not share the main session
+    library(here) #On Windows, %dopar%-ed code does not share the main session
+    stan_model(here("stan",sprintf("%s.stan", model_name)))
+  } %>%
+  setNames(model_names)
+```
+
+Run all models - MARTIN
+
+```{r}
+data_list = list()
+control_list = list()
+for(i in 1:length(models)) {
+  data_list[[i]] = data_for_stan
+  control_list[[i]] = list(
+        max_treedepth = switch(
+          model_names[i],
+          "logNormal_multinomial" = 12,
+          "logStudent_multinomial" = 13,
+          10
+        ))
+}
+
+fits = sampling_multi(models, data_list, control_per_item = control_list) %>%
+  setNames(model_names)
+```
+
+Run all models - STEFANO
+
+```{r}
+fits =
+  foreach(model = models, model_name = models %>% names, .combine = c) %:%
+  foreach(is_prior_asymetric = c(0,1), .combine = c) %do% {
+
+    # Trick for naming list
+    my_list = list()
+    my_list[[sprintf("%s_asymmetric-%s", model_name, is_prior_asymetric)]] =
+      sampling_check_return(
+        model,
+        data =
+          data_for_stan %>%
+          lplyr::mutate(is_prior_asymetric = is_prior_asymetric),
+        control = list(
+          max_treedepth = switch(
+            model_name,
+            "logNormal_multinomial" = 12,
+            "logStudent_multinomial" = 13,
+            10
+          )
+        )
+      )
+
+    # Return
+    my_list
+  }
+
+# Fit a single model
+fits$`logNormal_multinomial_asymmetric-1` =
+  sampling_check_return(
+     stan_model(here("stan",sprintf("%s.stan", "logNormal_multinomial"))),
+    data = data_for_stan %>% lplyr::mutate(is_prior_asymetric = 1),
+    control = list( max_treedepth = 12)
+)
+```
+
+
+Get generated quantities
+
+```{r}
+generated_quant =
+  foreach(fit = fits, model_name = fits %>% names, .combine = bind_rows) %dopar% {
+    library(dplyr) #On Windows, %dopar%-ed code does not share the main session
+    library(tidybayes)
+    fit %>%
+      gather_samples(counts_gen_naive[sample_idx, ens_iso_idx], counts_gen_geneWise[sample_idx, ens_iso_idx]) %>%
+      ungroup() %>%
+      mutate(model_name)
+  } %>%
+  left_join(counts_tidy) %>%
+  rename(Observed = `read count`, Estimated = estimate)
+
+```
+
+Plots
+
+```{r}
+
+# Overall distribution
+generated_quant %>%
+  gather(`Source`, `Read count`, c("Observed", "Estimated")) %>%
+  filter(.iteration %in% 1:50 & .chain %in% 1) %>%
+  mutate(term = gsub("counts_gen_", "", term)) %>%
+
+  # Plot
+  {
+    (.) %>%
+    ggplot(aes(`Read count` + 1, color = Source)) +
+    stat_bin(geom = "step", position = "identity", bins=50) +
+    facet_grid(term ~ model_name) +
+    scale_x_log10() +
+    scale_color_brewer(palette = "Set1") +
+    my_theme +
+    theme(
+    strip.text.y = element_text(angle = 0),
+    strip.text.x = element_text(angle = 90, size=8)
+    ) +
+    ggtitle("Overall read count distribution")
+  } %>%
+
+  # Save plot
+  {
+    ggsave(plot = (.), here("dev", "overall_read_count_distribution.png"))
+    (.)
+  }
+
+# Gene-wise distribution
+generated_quant %>%
+  gather(`Source`, `Read count`, c("Observed", "Estimated")) %>%
+  filter(.iteration %in% 1:50 & .chain %in% 1) %>%
+  filter(term == "counts_gen_geneWise") %>%
+  right_join( (.) %>% distinct(ens_iso) %>% head(n=20) ) %>%
+
+  # Gene-wise plots
+  {
+    (.) %>%
+    ggplot(aes(`Read count` + 1, color = Source)) +
+    stat_bin(geom = "step", position = "identity", bins=50, size=0.2 ) +
+    facet_grid(model_name ~ ens_iso) +
+    scale_x_log10() +
+    scale_color_brewer(palette = "Set1") +
+      #scale_size()
+    my_theme +
+    theme(
+      strip.text.y = element_text(angle = 0),
+      strip.text.x = element_text(angle = 90, size=8)
+    ) +
+    ggtitle("Gene-wise read count distribution")
+  } %>%
+
+  # Save plot
+  {
+    ggsave(plot = (.), here("dev", "gene_wise_read_count_distribution.png"), width=29, height=21, units = "cm")
+    (.)
+  }
+
+
+```
+
+```{r}
+
+library(tidyverse)
+
+my_theme =
+  theme_bw() +
+  theme(
+    panel.border = element_blank(),
+    axis.line = element_line(),
+    panel.grid.major = element_line(size = 0.2),
+    panel.grid.minor = element_line(size = 0.1),
+    text = element_text(size = 12),
+    aspect.ratio = 1,
+    strip.background = element_blank(),
+    axis.title.x  = element_text(margin = margin(
+      t = 10,
+      r = 10,
+      b = 10,
+      l = 10
+    )),
+    axis.title.y  = element_text(margin = margin(
+      t = 10,
+      r = 10,
+      b = 10,
+      l = 10
+    ))
+  )
+
+waring_lpdf <- function(y, mu, k, rho) {
+  a <- mu * (rho - 1) / k
+  lgamma(a + rho) + lgamma(k + rho) - lgamma(rho) - lgamma(a + k + rho) + lgamma(a + y) - lgamma(a) + lgamma(k + y) - lgamma(k) - lgamma(a + k + rho + y) + lgamma(a + k + rho) - lgamma(y + 1)
+}
+
+# Fixing the decomposition of variance
+# https://www.wolframalpha.com/input/?i=solve+for+k%2C+rho+%3A+tau+%3D+%28k+%2B+1%29%2F%28rho+-+2%29%3B+phi+%3D+k+*+%28rho+-+2%29+%2F+%28k+%2B+rho++-1%29
+
+# tau not correctly scaled
+
+main_data <-
+
+  tibble(mu = 50) %>%
+  crossing(tibble(y = seq(from = 0, to = 1000, by = 1))) %>%
+  crossing(tibble(phi = 50))%>%
+  crossing(tibble(tau = c(0.001, 0.01, seq(0.1, 1, 0.1), seq(1, 10, 1), 100, 1000))) %>%
+  mutate(
+    k = (tau + 1)*phi,
+    rho = (phi + 1) / tau + phi + 2,
+    ld = waring_lpdf(y, mu = mu, k = k , rho = rho)) %>%
+  bind_rows(
+    tibble(mu = 500) %>%
+      crossing(tibble(y = seq(from = 0, to = 5000, by = 10))) %>%
+      crossing(tibble(phi = 50))%>%
+      crossing(tibble(tau = c(0.001, 0.01, seq(0.1, 1, 0.1), seq(1, 10, 1), 100, 1000))) %>%
+      mutate(
+        k = (tau + 1)*phi,
+        rho = (phi + 1) / tau + phi + 2,
+        ld = waring_lpdf(y, mu = mu, k = k , rho = rho))
+  ) %>%
+  bind_rows(
+    tibble(mu = 5000) %>%
+      crossing(tibble(y = seq(from = 0, to = 50000, by = 100))) %>%
+      crossing(tibble(phi = 50))%>%
+      crossing(tibble(tau = c(0.001, 0.01, seq(0.1, 1, 0.1), seq(1, 10, 1), 100, 1000))) %>%
+      mutate(
+        k = (tau + 1)*phi,
+        rho = (phi + 1) / tau + phi + 2,
+        ld = waring_lpdf(y, mu = mu, k = k , rho = rho))
+  ) %>%
+  bind_rows(
+    tibble(mu = 10000) %>%
+      crossing(tibble(y = seq(from = 0, to = 50000, by = 100))) %>%
+      crossing(tibble(phi = 50))%>%
+      crossing(tibble(tau = c(0.001, 0.01, seq(0.1, 1, 0.1), seq(1, 10, 1), 100, 1000))) %>%
+      mutate(
+        k = (tau + 1)*phi,
+        rho = (phi + 1) / tau + phi + 2,
+        ld = waring_lpdf(y, mu = mu, k = k , rho = rho))
+  )
+
+nb_data <-
+  main_data %>%
+  distinct(mu ,    y ,  phi) %>%
+  mutate(
+    nb_dens = dnbinom(y, mu = mu, size = phi, log = TRUE)
+  )
+
+(main_data %>%
+  ggplot(aes(x = y, y = ld %>% exp, color = tau)) +
+  geom_line(aes(group = tau)) +
+  geom_line(data = nb_data, aes(y = nb_dens %>% exp), color="red") +
+  facet_wrap(~mu+phi, ncol = 2, labeller = "label_both", scales = "free") +
+  my_theme) %>% plotly::ggplotly()
+
+
+# tau pathological behaviour
+
+main_data <-
+  tibble(mu = 5000) %>%
+  crossing(tibble(y = seq(from = 0, to = 50000, by = 100))) %>%
+  crossing(tibble(phi = c(50, 500, 5000)))%>%
+  crossing(tibble(tau = c(5, 50, 500))) %>%
+  mutate(
+    k = (tau + 1)*phi,
+    rho = (phi + 1) / tau + phi + 2,
+    ld = waring_lpdf(y, mu = mu, k = k , rho = rho))
+
+nb_data <-
+  main_data %>%
+  distinct(mu ,    y ,  phi) %>%
+  mutate(
+    nb_dens = dnbinom(y, mu = mu, size = phi, log = TRUE)
+  )
+
+(main_data %>%
+    ggplot(aes(x = y, y = ld , color = factor(tau))) +
+    geom_line(aes(group = tau)) +
+    geom_line(data = nb_data, aes(y = nb_dens ), color="black") +
+    facet_wrap(~mu+phi,   scales = "free") +
+    my_theme) %>% plotly::ggplotly()
+
+```
