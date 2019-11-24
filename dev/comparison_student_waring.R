@@ -82,7 +82,7 @@ main_data %>%
 		my_theme) %>% plotly::ggplotly()
 
 
-# tau pathological behaviour
+# density varying tails
 
 main_data <-
 	tibble(mu = 5) %>%
@@ -215,13 +215,13 @@ main_data %>%
 		my_theme) %>% plotly::ggplotly()
 
 
-# tau pathological behaviour
+# density varying tails
 
 main_data <-
 	tibble(mu = 5000) %>%
 	crossing(tibble(y = seq(from = 0, to = 50000, by = 100))) %>%
-	crossing(tibble(phi = c(50, 500, 5000)))%>%
-	crossing(tibble(tau = c(5, 50, 500))) %>%
+	crossing(tibble(phi = c(50)))%>%
+	crossing(tibble(tau = c(1, 2, 3, 4,5, 10, 20, 30, 40, 50, 500))) %>%
 	mutate(
 		k = (tau + 1)*phi,
 		rho = (phi + 1) / tau + phi + 2,
@@ -235,9 +235,9 @@ nb_data <-
 	)
 
 (main_data %>%
-		ggplot(aes(x = y, y = ld , color = factor(tau))) +
+		ggplot(aes(x = y, y = ld , color = (tau))) +
 		geom_line(aes(group = tau)) +
-		geom_line(data = nb_data, aes(y = nb_dens ), color="black") +
+		geom_line(data = nb_data, aes(y = nb_dens ), color="red") +
 		facet_wrap(~mu+phi,   scales = "free") +
 		my_theme) %>% plotly::ggplotly()
 
@@ -299,7 +299,6 @@ main_data <-
       mutate(  ld = waring_fixed_lpmf(y, mu = mu, phi = phi, tau = tau))
   )
 
-
 nb_data <-
   main_data %>%
   distinct(mu ,    y ,  phi) %>%
@@ -334,12 +333,9 @@ main_data %>%
 
 
 
-
 # Avoiding pathological tau lower tail
 
 # wrong shape
-
-
 
 tau = 0.03
 mu = 10000
@@ -351,8 +347,8 @@ a <-  mu * (rho - 1) / k
 rbeta(10000, k, rho) %>% density %>% plot
 
 tibble(
-w = rwaring_fixed(100000, mu, phi, tau) ,
-n = rnbinom(100000, mu = mu, size = phi)
+w = rwaring_fixed(1000, mu, phi, tau) ,
+n = rnbinom(1000, mu = mu, size = phi)
 ) %>%
   gather(dist, count) %>%
   ggplot(aes(count, color=dist)) + geom_density() + scale_y_log10()
@@ -364,7 +360,7 @@ main_data %>%
   geom_line(
     data = nb_data %>% filter(mu == !!mu & phi  == !!phi & tau == !!tau),
     aes(y = nb_dens %>% exp), color="red") +
-  facet_wrap(~mu+phi, ncol = 2, labeller = "label_both", scales = "free")
+  facet_wrap(~mu+phi, ncol = 2, labeller = "label_both", scales = "free") + scale_y_log10() +
   my_theme
 
 tau = 0.02
@@ -391,16 +387,32 @@ list(
     n = rnbinom(100000, mu = mu, size = phi)
   ) %>%
     gather(dist, count) %>%
-    ggplot(aes(count, color=dist)) + geom_density() + scale_y_log10() + scale_color_manual(values = c("red", "blue")),
+    ggplot(aes(count, color=dist)) + geom_density() + scale_y_log10() + xlim(c(0,25000)) + scale_color_manual(values = c("red", "blue")),
 
-  main_data %>%
-    filter(mu == !!mu & phi  == !!phi & tau == !!tau) %>%
+  {
+    my_df =
+      tibble(mu = !!mu) %>%
+      crossing(tibble(y = seq(from = 0, to = 5 * mu, by = 100))) %>%
+      crossing(tibble(phi = !!phi))%>%
+      crossing(tibble(tau = !!tau)) %>%
+      mutate(  ld = waring_fixed_lpmf(y, mu = mu, phi = phi, tau = tau))
+
+    my_df %>%
     ggplot(aes(x = y, y = ld %>% exp, color = tau)) +
     geom_line(aes(group = tau)) +
     geom_line(
-      data = nb_data %>% filter(mu == !!mu & phi  == !!phi & tau == !!tau),
-      aes(y = nb_dens %>% exp), color="red") + scale_y_log10() +
+      data =
+        my_df %>%
+        distinct(mu ,    y ,  phi) %>%
+        mutate(
+          nb_dens = dnbinom(y, mu = mu, size = phi, log = TRUE)
+        ) %>%
+        filter(mu == !!mu & phi  == !!phi & tau == !!tau),
+      aes(y = nb_dens %>% exp, group=phi),
+      color="red"
+    )  +
     facet_wrap(~mu+phi, ncol = 2, labeller = "label_both", scales = "free")
+  }
 ) %>% cowplot::plot_grid(plotlist = .)
 
 
@@ -422,3 +434,212 @@ k <-  (tau + 1)*phi
 rho <-  (phi + 1) / tau + phi + 2
 a <-  mu * (rho - 1) / k
 rbeta(10000, k, rho) %>% density %>% plot
+
+
+# trend of the difference at y = 0
+
+waring_fixed_lpmf <- function(y, mu, phi, tau) {
+
+  tau = tau * mu /phi
+
+  k = (tau + 1)*phi
+  rho = (phi + 1) / tau + phi + 2
+  waring_lpdf(y, mu = mu, k = k , rho = rho)
+
+}
+
+mu = c(10, 100, 1000)
+phi = c(5 , 10,  20 , 50, 100, 200 ,500)
+tau = c(0.1, 0.5, 1, 2)
+
+tibble(mu = !!mu) %>%
+  crossing(tibble(y = seq(from = 0, to = 2 * max(mu), by = 1))) %>%
+  crossing(tibble(phi = !!phi))%>%
+  crossing(tibble(tau = !!tau)) %>%
+  mutate(  ld = waring_fixed_lpmf(y, mu = mu, phi = phi, tau = tau)) %>%
+  filter(y == 0) %>%
+  mutate(
+    nb_dens = dnbinom(y, mu = mu, size = phi, log = TRUE)
+  ) %>% ggplot(aes(x = phi, y =  ld / nb_dens, color=interaction(mu, tau))) + geom_line()
+
+# Detection of the pathological wall
+
+# Original waring
+
+my_df =
+  tibble(mu = seq(1,10000, 10)) %>%
+  crossing(tibble(y = 0)) %>%
+  crossing(tibble(phi = c(1:500)))%>%
+  crossing(tibble(tau = 1:500)) %>%
+  mutate(
+    k = (tau + 1)*phi,
+   rho = (phi + 1) / tau + phi + 2,
+    ld = waring_lpdf(y, mu = mu,  k = k, rho =rho)) %>%
+  mutate(
+    nb_dens = dnbinom(y, mu = mu, size = phi, log = TRUE)
+  )
+
+
+  my_df %>%
+    filter(tau %in% seq(10, 100, 10)) %>%
+  ggplot(aes(x = mu, y = phi, fill = ld - nb_dens > 0)) + geom_tile() + facet_wrap(~tau)
+
+# Calculate regression
+  my_df %>%
+    filter(mu==291) %>%
+    ggplot(aes(x = tau, y = phi, fill = ld - nb_dens > 0)) + geom_tile()
+
+  my_df %>%
+    filter(phi == 250) %>%
+    ggplot(aes(x = tau, y = mu, fill = ld - nb_dens > 0)) + geom_tile()
+
+my_df %>%
+  mutate(valid = ld - nb_dens > 0) %>%
+  filter(valid) %>%
+  group_by(mu, tau) %>%
+  arrange(phi) %>%
+  slice(1) %>%
+  ungroup() %>%
+  ggplot(aes(x = mu, y = phi)) + geom_point() + facet_wrap(~tau)
+
+
+my_df %>%
+  filter(mu==291) %>%
+  mutate(valid = ld - nb_dens > 0) %>%
+  filter(valid) %>%
+  group_by(mu, tau) %>%
+  arrange(phi) %>%
+  slice(1) %>%
+  ungroup() %>%
+  ggplot(aes(x = tau, y = phi)) + geom_point()
+
+plot_ly(x = x$mu, y = x$phi, z = x$tau) %>% add_surface()
+
+scatter3D(x = x$mu, y = x$phi, z = x$tau)
+
+plot_ly(x, x = ~mu, y = ~phi, z = ~tau, color = ~tau) %>% add_markers()
+
+
+
+# Compre the shift in slope
+my_df %>%
+  mutate(valid = ld - nb_dens > 0) %>%
+  filter(valid) %>%
+  group_by(mu, tau) %>%
+  arrange(phi) %>%
+  slice(1) %>%
+  ungroup() %>%
+  group_by(tau) %>%
+  summarise(slope = lm(phi ~ mu, data=.) %>% summary %$% coefficients %>% `[` (2,1))
+
+# calculate shift in slope
+
+my_df %>%
+  mutate(valid = ld - nb_dens > 0) %>%
+  filter(valid) %>%
+  group_by(mu, tau) %>%
+  arrange(phi) %>%
+  slice(1) %>%
+  ungroup() %>%
+  nest(data = -tau) %>%
+  mutate(slope = map(data, ~ lm(phi ~ mu, data=.x) %>% summary %$% coefficients %>% `[` (2,1))) %>%
+  unnest(slope) %>%
+  lm(1/slope ~ 0 + tau, data=.)
+
+
+waring_fixed_lpmf <- function(y, mu, phi, tau) {
+
+  tau = tau * mu
+
+  k = (tau + 1)*phi
+  rho = (phi + 1) / tau + phi + 2
+  waring_lpdf(y, mu = mu, k = k , rho = rho)
+
+}
+
+{
+  tibble(mu = seq(1,10000, 10)) %>%
+    crossing(tibble(y = 0)) %>%
+    crossing(tibble(phi = c(1:500, 10)))%>%
+  crossing(tibble(tau = 0.1)) %>%
+  mutate(  ld = waring_fixed_lpmf(y, mu = mu, phi = phi, tau = tau)) %>%
+  filter(y == 0) %>%
+  mutate(
+    nb_dens = dnbinom(y, mu = mu, size = phi, log = TRUE)
+  ) %>%
+  ggplot(aes(x = mu, y = phi, fill = ld - nb_dens > 0)) + geom_tile()
+
+  } %>% plotly::ggplotly()
+
+
+# Corrected waring
+
+waring_fixed_regres_lpmf <- function(y, mu, phi, tau) {
+
+  tau = tau * mu + ( mu / (phi * 1.079) )
+
+  k = (tau + 1)*phi
+  rho = (phi + 1) / tau + phi + 2
+  waring_lpdf(y, mu = mu, k = k , rho = rho)
+
+}
+
+my_tau = c(0.001, 0.01, seq(0.1, 1, 0.1), seq(1, 10, 1))/100
+
+
+main_data <-
+
+  tibble(mu = 50) %>%
+  crossing(tibble(y = seq(from = 0, to = 1000, by = 1))) %>%
+  crossing(tibble(phi = 50))%>%
+  crossing(tibble(tau = my_tau)) %>%
+  mutate(  ld = waring_fixed_regres_lpmf(y, mu = mu, phi = phi, tau = tau)) %>%
+  bind_rows(
+    tibble(mu = 500) %>%
+      crossing(tibble(y = seq(from = 0, to = 5000, by = 10))) %>%
+      crossing(tibble(phi = 50))%>%
+      crossing(tibble(tau = my_tau)) %>%
+      mutate(  ld = waring_fixed_regres_lpmf(y, mu = mu, phi = phi, tau = tau))
+  ) %>%
+  bind_rows(
+    tibble(mu = 5000) %>%
+      crossing(tibble(y = seq(from = 0, to = 50000, by = 100))) %>%
+      crossing(tibble(phi = 50))%>%
+      crossing(tibble(tau = my_tau)) %>%
+      mutate(  ld = waring_fixed_regres_lpmf(y, mu = mu, phi = phi, tau = tau))
+  ) %>%
+  bind_rows(
+    tibble(mu = 10000) %>%
+      crossing(tibble(y = seq(from = 0, to = 50000, by = 100))) %>%
+      crossing(tibble(phi = 50))%>%
+      crossing(tibble(tau = my_tau)) %>%
+      mutate(  ld = waring_fixed_regres_lpmf(y, mu = mu, phi = phi, tau = tau))
+  )
+
+nb_data <-
+  main_data %>%
+  distinct(mu ,    y ,  phi) %>%
+  mutate(
+    nb_dens = dnbinom(y, mu = mu, size = phi, log = TRUE)
+  )
+
+(main_data %>%
+    ggplot(aes(x = y, y = ld %>% exp, color = tau)) +
+    geom_line(aes(group = tau)) +
+    geom_line(data = nb_data, aes(y = nb_dens %>% exp), color="red") +
+    facet_wrap(~mu+phi, ncol = 2, labeller = "label_both", scales = "free") +
+    my_theme) %>% plotly::ggplotly()
+
+
+# find function
+my_df %>%
+     mutate(valid = ld - nb_dens > 0) %>%
+     filter(valid) %>%
+     group_by(mu, tau) %>%
+     arrange(phi) %>%
+     slice(1) %>%
+     ungroup() %>%
+     nest(data = -tau) %>%
+     mutate(slope = map(data, ~ lm(phi ~ mu, data=.x) %>% summary %$% coefficients %>% `[` (2,1))) %>%
+     unnest(slope) %>%
+     lm(1/slope ~ tau, data=.)
