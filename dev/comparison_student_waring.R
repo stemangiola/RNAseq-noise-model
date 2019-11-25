@@ -576,7 +576,10 @@ waring_fixed_lpmf <- function(y, mu, phi, tau) {
 
 waring_fixed_regres_lpmf <- function(y, mu, phi, tau) {
 
-  tau = tau * mu + ( mu / (phi * 1.079) )
+  pathological_wall_adjustment = (1.03659 * mu)/ phi    # https://www.wolframalpha.com/input/?i=solve+p+%3D+m+%2F+%28+t+*+0.9647%29++for+t
+  #pathological_wall_adjustment = ( mu / (phi * 1.079) )
+
+  tau = tau * mu / phi + pathological_wall_adjustment
 
   k = (tau + 1)*phi
   rho = (phi + 1) / tau + phi + 2
@@ -584,7 +587,24 @@ waring_fixed_regres_lpmf <- function(y, mu, phi, tau) {
 
 }
 
-my_tau = c(0.001, 0.01, seq(0.1, 1, 0.1), seq(1, 10, 1))/100
+rwaring_fixed_regres <- function(n, mu, phi, tau) {
+
+  pathological_wall_adjustment = (1.03659 * mu)/ phi    # https://www.wolframalpha.com/input/?i=solve+p+%3D+m+%2F+%28+t+*+0.9647%29++for+t
+
+  tau = tau * mu + pathological_wall_adjustment
+
+  k <-  (tau + 1)*phi
+  rho <-  (phi + 1) / tau + phi + 2
+  a <-  mu * (rho - 1) / k
+
+  v_logit <- rbeta(n, k, rho)
+
+  v <-  v_logit / (1 - v_logit)
+  neg_bin_mu = a * v
+  rnbinom(n, mu = neg_bin_mu, size = a)
+}
+
+my_tau = c(0.001, 0.01, seq(0.1, 1, 0.1), seq(1, 10, 1))
 
 
 main_data <-
@@ -640,6 +660,52 @@ my_df %>%
      slice(1) %>%
      ungroup() %>%
      nest(data = -tau) %>%
-     mutate(slope = map(data, ~ lm(phi ~ mu, data=.x) %>% summary %$% coefficients %>% `[` (2,1))) %>%
+     mutate(slope = map(data, ~ lm(phi ~ 0 + mu, data=.x) %>% summary %$% coefficients %>% `[` (1) )) %>%
      unnest(slope) %>%
      lm(1/slope ~ tau, data=.)
+
+# Checking stability with varying phi
+
+main_data <-
+
+  tibble(mu = 50) %>%
+  crossing(tibble(y = seq(from = 0, to = 1000, by = 1))) %>%
+  crossing(tibble(phi = c(5, 10, 50, 100, 500)))%>%
+  crossing(tibble(tau = my_tau)) %>%
+  mutate(  ld = waring_fixed_regres_lpmf(y, mu = mu, phi = phi, tau = tau)) %>%
+  bind_rows(
+    tibble(mu = 50) %>%
+      crossing(tibble(y = seq(from = 0, to = 1000, by = 1))) %>%
+      crossing(tibble(phi = c(5, 10, 50, 100, 500)))%>%
+      crossing(tibble(tau = my_tau)) %>%
+      mutate(  ld = waring_fixed_regres_lpmf(y, mu = mu, phi = phi, tau = tau))
+  ) %>%
+  bind_rows(
+    tibble(mu = 50) %>%
+      crossing(tibble(y = seq(from = 0, to = 1000, by = 1))) %>%
+      crossing(tibble(phi = c(5, 10, 50, 100, 500)))%>%
+      crossing(tibble(tau = my_tau)) %>%
+      mutate(  ld = waring_fixed_regres_lpmf(y, mu = mu, phi = phi, tau = tau))
+  ) %>%
+  bind_rows(
+    tibble(mu = 50) %>%
+      crossing(tibble(y = seq(from = 0, to = 1000, by = 1))) %>%
+      crossing(tibble(phi = c(5, 10, 50, 100, 500)))%>%
+      crossing(tibble(tau = my_tau)) %>%
+      mutate(  ld = waring_fixed_regres_lpmf(y, mu = mu, phi = phi, tau = tau))
+  )
+
+nb_data <-
+  main_data %>%
+  distinct(mu ,    y ,  phi) %>%
+  mutate(
+    nb_dens = dnbinom(y, mu = mu, size = phi, log = TRUE)
+  )
+
+(main_data %>%
+    ggplot(aes(x = y, y = ld %>% exp, color = tau)) +
+    geom_line(aes(group = tau)) +
+    geom_line(data = nb_data, aes(y = nb_dens %>% exp), color="red") +
+    facet_wrap(~mu+phi, ncol = 2, labeller = "label_both", scales = "free") + scale_y_log10() +
+    my_theme) %>% plotly::ggplotly()
+
