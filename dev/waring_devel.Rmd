@@ -21,6 +21,11 @@ Testing different parametrizations
 Direct parametrization.
 
 ```{r}
+gwaring_raw_lpmf <- function(y, a, k, rho) {
+  lgamma(a + rho) + lgamma(k + rho) - lgamma(rho) - lgamma(a + k + rho) + lgamma(a + y) - lgamma(a) + lgamma(k + y) - lgamma(k) - lgamma(a + k + rho + y) + lgamma(a + k + rho) - lgamma(y + 1)
+}
+
+
 gwaring_lpmf <- function(y, mu, k, rho) {
   a <- mu * (rho - 1) / k
   lgamma(a + rho) + lgamma(k + rho) - lgamma(rho) - lgamma(a + k + rho) + lgamma(a + y) - lgamma(a) + lgamma(k + y) - lgamma(k) - lgamma(a + k + rho + y) + lgamma(a + k + rho) - lgamma(y + 1)
@@ -35,6 +40,21 @@ tibble(mu = 50) %>%
     ggplot(aes(x = y, y = ld, color = rho, group = rho)) + geom_line() + facet_wrap(~k, ncol = 3, labeller = "label_both")
 
 ```
+
+```{r}
+upper_range <- 15
+tibble(a = 2) %>% 
+  crossing(tibble(y = seq(from = 0, to = upper_range, by = ceiling(upper_range / 100)))) %>% 
+  crossing(tibble(k = c(0.1, 0.5, 1, 3, 5, 10)))%>% 
+  crossing(tibble(rho = seq(1.1, 10, length.out = 5)))%>% 
+  mutate(ld = gwaring_raw_lpmf(y, a, k, rho) %>% exp())  %>%
+    ggplot(aes(x = y, y = ld, color = rho, group = rho)) + geom_line() + facet_wrap(~k, ncol = 3, labeller = "label_both")
+
+```
+
+
+Notes from: https://rss.onlinelibrary.wiley.com/doi/abs/10.2307/2345247
+$a$ and $k$ are interchangeable (hence the bimodality)
 
 ## Decomposing variance (looks best so far)
 
@@ -51,6 +71,25 @@ So as $\tau \rightarrow 0$ the distribution approaches $NB(\mu, \phi)$. Eventual
 
 
 ```{r}
+rgwaring2 <- function(n, mu, phi, tau) {
+   k <-  (tau + 1)*phi
+   rho <-  (phi + 1) / tau + phi + 2
+   a <-  mu * (rho - 1) / k
+
+   v_logit <- rbeta(n, k, rho)
+   
+   v <-  v_logit / (1 - v_logit)
+   neg_bin_mu = a * v
+   rnbinom(n, mu = neg_bin_mu, size = a)
+}
+
+gwaring2_lpmf <- function(y, mu, phi, tau) {
+   k <-  (tau + 1)*phi
+   rho <-  (phi + 1) / tau + phi + 2
+   a <-  mu * (rho - 1) / k
+   gwaring_lpmf(y, mu, rho, k)
+}
+
 main_data <- tibble(mu = 50) %>% 
   crossing(tibble(y = seq(from = 0, to = 1000, by = 1))) %>% 
   crossing(tibble(phi = c(1, 5, 10)))%>% 
@@ -70,6 +109,8 @@ main_data %>%
       geom_point(data = nb_data, aes(y = nb_dens, shape = as.factor(phi))) +
       geom_line() + 
       facet_wrap(~tau, ncol = 2, labeller = "label_both", scales = "free_y")
+
+#main_data %>% mutate(a = mu * (rho - 1) / k) %>% select(a,k,rho, mu, tau, phi) %>% distinct() 
 ```
 
 
@@ -87,8 +128,287 @@ $$
 
 For $\tau, \phi > 0$. This parametrization doesn't allow you to have $\rho \leq 2$ but that is IMHO OK, because in this case the distribution has infinite variance (and for $\rho \leq 1$ the mean is not defined as well) - which seems mostly undesirable anyway.
 
+```{r}
+base_data <- tibble(mu = c(5, 50, 500, 50000)) 
+
+nb_data <- base_data %>%
+  crossing(tibble(phi = c(1.1,5))) %>%
+  #crossing(tibble(k = c(1, 100, 1000))) %>%
+  crossing(tibble(q = seq(1e-1, 1- 1e-5, length.out = 200))) %>%
+  group_by(mu) %>%
+  mutate(x = qnbinom(q, mu = mu, size = min(phi))) %>%
+  ungroup() %>%
+  mutate(d_nb = dnbinom(x, mu = mu, size = phi, log = TRUE))
+
+nb_data %>% 
+  crossing(tibble(tau = exp(seq(-3,3)))) %>%
+  mutate(d = gwaring2_lpmf(x, mu = mu , tau = tau, phi = phi), g = factor(tau)) %>%
+  ggplot(aes(x = x, y = d, color = tau )) + geom_line(aes(group = g)) + 
+  geom_line(data = nb_data, aes(y = d_nb), color = "red") +
+  facet_wrap(phi~mu, scales = "free", labeller = label_both, ncol = 4)
+```
 
 
+## Stefano's approach + symmetry
+
+```{r}
+gwaring_stefano_lpmf <- function(y, mu, phi, s) {
+
+  #tau = t * mu + ( mu / (phi * 1) )
+  tau = s * mu / phi
+
+  k = (tau + 1)*phi
+  rho = (phi + 1) / tau + phi + 2
+  gwaring_lpmf(y, mu = mu, k = k , rho = rho)
+
+}
+
+gwaring_stefano2_lpmf <- function(y, mu, phi, r) {
+  #phi2 <- (phi + phi^2 + mu * phi * t) / (mu * t + phi * t + mu * t^2)
+  #t2 <-  -(-1 -phi +phi2* t)/(mu*t)
+  #print(phi2)
+  #print(t2)
+  s_border <- 0.5 * (sqrt(4*mu + 4 * mu * phi + phi^2) / mu - phi / mu)
+  gwaring_stefano_lpmf(y, mu, phi, r + s_border)
+}
+  
+rgwaring_stefano2 <- function(n, mu, phi, r) {
+  s_border <-  0.5 * (sqrt(4*mu + 4 * mu * phi + phi^2) / mu - phi / mu);
+  tau <-  (s_border + r) * mu / phi;
+  rgwaring2(n, mu, phi, tau)
+}
+
+#mu <- c(500); 
+phi <- c(0.1,0.5,1,5); 
+# mu <- c(5,50,500,5000); 
+# phi <- c(50); 
+r <- seq(0.01,2, length.out = 8)
+
+
+base <- tibble(mu = mu) %>%
+  crossing(tibble(phi = phi))%>% 
+  mutate(low_bound = qnbinom(0.025, mu = mu, size = phi),
+         high_bound = qnbinom(0.975, mu = mu, size = phi)
+         ) %>%
+  crossing(tibble(y_step = seq(0,1, length.out = 100))) %>% 
+  mutate(y = round(low_bound + (high_bound - low_bound) * y_step))
+
+
+
+main_data <- base %>% 
+  crossing(tibble(r = r)) %>% 
+  mutate(
+    ld = gwaring_stefano2_lpmf(y, mu = mu, phi = phi, r = r))
+
+nb_data <- base %>% mutate(
+         nb_dens = dnbinom(y, mu = mu, size = phi, log = TRUE)
+         )
+
+main_data %>%
+  ggplot(aes(x = y, y = ld, color = r, group = r)) + 
+      geom_line(data = nb_data, aes(x = y, y = nb_dens), inherit.aes = FALSE, color = "red") +
+      geom_line() + 
+      facet_wrap(mu~phi, ncol = 2, labeller = "label_both", scales = "free")
+
+```
+
+```{r}
+pair_data <- tibble(mu = c(5, 50, 500, 5000)) %>%
+  crossing(phi = exp(seq(log(0.1), log(5), length.out = 100))) %>%
+  crossing(s = exp(seq(log(0.1), log(5), length.out = 100))) %>%
+  mutate(phi2 = (phi + phi^2 + mu * phi * s) / (mu * s + phi * s + mu * s^2),
+         s2 = -(-1 -phi +phi2* s)/(mu*s), 
+         s_border = 0.5 * (sqrt(4*mu + 4 * mu * phi + phi^2) / mu - phi / mu)) 
+  
+pair_data  %>%
+  ggplot(aes(x = phi, y = s, fill = s2)) + geom_raster() + scale_x_log10() + scale_y_log10() + facet_wrap(~mu)
+
+pair_data  %>%
+  ggplot(aes(x = phi, y = s, fill = phi2)) + geom_raster() + scale_x_log10() + scale_y_log10() + facet_wrap(~mu)
+
+pair_data  %>%
+  ggplot(aes(x = phi, y = s, fill = s_border)) + geom_raster() + scale_x_log10() + scale_y_log10() + facet_wrap(~mu)
+
+
+```
+
+
+```{r}
+main_data %>% filter(is.na(ld))
+```
+
+
+## Handling the symmetry
+
+Test mu, phi, rho
+
+https://www.wolframalpha.com/input/?i=solve+for+%CF%95%3A%CE%BC+%3E%3D+%28-%CF%95%5E2+%2B+r+%CF%95%5E2%29%2F%28-2+%2B+r+-+%CF%95%29%5E2%3B+%CF%95+%3E+0%3B+%CE%BC+%3E+0%3B+r+%3E+%CF%95+%2B+2
+
+```{r}
+#curve((1/log(2))*(log(2) - log(1+exp(-x / log(2)))),0.001, 4)
+curve(1 - exp(-x), 0.0001,4)
+abline(a = 0, b = 1, col = "blue")
+```
+
+
+```{r}
+inv_logit <- function(x) {
+  1 / (1 + exp(-x))
+}
+
+
+phi_max <- function(mu, rho) {
+  if_else(abs(rho - (mu + 1)) < 1e-9,
+    (mu - 1) / 2,
+    ((rho - 2) * sqrt(mu * (rho - 1)) - mu * (rho - 2)) / (rho - mu - 1)
+    )
+}
+
+gwaring4_lpmf <- function(y, mu, phi_prime, rho_prime) {
+   rho <- phi_prime + 2 + 1 / rho_prime 
+   #phi <- 2 *(inv_logit(phi_prime) - 0.5) * phi_max(mu, rho)
+   #phi <- phi_max(mu, rho) * (1 - exp(phi_prime))
+   phi <- phi_prime
+   k <-  (rho - 1) * phi / (rho - phi - 2)
+   a <-  mu * (rho - phi - 2) / phi
+   gwaring_raw_lpmf(y, a = a, rho = rho, k = k)
+}
+
+mu <- 50; phi <- c(1,5,10); 
+
+main_data <- tibble(mu = mu) %>% 
+  crossing(tibble(y = seq(from = 0, to = 1000, by = 1))) %>% 
+  crossing(tibble(phi_prime = c(1, 5, 10)))%>% 
+  crossing(tibble(rho_prime = c(0.0001, 0.01, 0.5, 1))) %>% 
+  mutate(
+    ld = gwaring4_lpmf(y, mu = mu, phi_prime = phi_prime, rho_prime = rho_prime))
+
+nb_data <- main_data %>% filter(y %% 100 == 0) %>%
+  mutate(
+         nb_dens = dnbinom(y, mu = mu, size = phi_prime, log = TRUE)
+         )
+
+main_data %>%
+  ggplot(aes(x = y, y = ld, color = as.factor(phi_prime), group = phi_prime)) + 
+      geom_point(data = nb_data, aes(y = nb_dens, shape = as.factor(phi_prime))) +
+      geom_line() + 
+      facet_wrap(~rho_prime, ncol = 2, labeller = "label_both", scales = "free_y")
+
+```
+
+```{r}
+base_data <- tibble(mu = c(5, 50, 500, 50000)) 
+
+nb_data <- base_data %>%
+  crossing(tibble(phi = c(1.1,5))) %>%
+  #crossing(tibble(k = c(1, 100, 1000))) %>%
+  crossing(tibble(q = seq(1e-2, 1-1e-2, length.out = 200))) %>%
+  group_by(mu) %>%
+  mutate(x = qnbinom(q, mu = mu, size = min(phi))) %>%
+  ungroup() %>%
+  mutate(d_nb = dnbinom(x, mu = mu, size = phi, log = TRUE))
+
+nb_data %>% 
+  crossing(tibble(rho_prime = exp(seq(-5,3)))) %>%
+  mutate(d = gwaring4_lpmf(x, mu = mu , rho_prime = rho_prime, phi_prime = phi), g = factor(rho_prime)) %>%
+  ggplot(aes(x = x, y = d, color = rho_prime )) + geom_line(aes(group = g)) + 
+  geom_line(data = nb_data, aes(y = d_nb), color = "red") +
+  facet_wrap(phi~mu, scales = "free", labeller = label_both, ncol = 4)
+```
+
+
+
+This is how to compute tau and phi values that result in the same distribution f
+
+https://www.wolframalpha.com/input/?i=solve+for+t%2C+f%3A++t+%3D+%28a+%2B+1%29+%2F%28rho+-2%29%3B+f+%3D+a*+%28rho+-+2%29%2F%28a%2Brho+-1%29+%3B+a+%3D+mu+*+%28rho+-+1%29%2Fk%3B+k+%3D+%28tau+%2B+1%29+*+phi%3B+rho+%3D+%28phi+%2B+1%29%2Ftau+%2B+phi+%2B+2%3B+mu+%3E+0%3B+phi+%3E+0%3B+tau+%3E+0
+
+
+## Limiting $\tau$
+
+https://www.wolframalpha.com/input/?i=solve+for+tau%3A+mu+*+%28%28phi+%2B+1%29+%2F+tau+%2B+phi+%2B+2+-+1%29++%3E++%28%28tau+%2B+1%29*phi%29+%5E+2%3B+mu+%3E+0%3B+phi+%3E+0%3B+tau+%3E+0
+
+
+```{r}
+inv_logit <- function(x) {
+  1 / (1 + exp(-x))
+}
+
+# gwaring3_lpmf <- function(y, mu, k, rho) {
+#    min_k <- sqrt(mu * (rho - 1))
+#    k <- k_prime + min_k
+#    a <-  mu * (rho - 1) / k
+#    gwaring_lpmf(y, mu, rho, k)  
+# }
+
+gwaring3_lpmf <- function(y, mu, tau_prime, phi) {
+   tau_border <- 0.5 * (sqrt((4*mu * (phi + 1) + phi^ 2) / phi ^ 2) - 1)
+   tau <- 2 *(inv_logit(tau_prime) - 0.5) * tau_border
+   #tau <- tau_border * (1 - exp(tau_prime))
+   #tau <- tau_prime + tau_border
+   k <-  (tau + 1)*phi
+   rho <-  (phi + 1) / tau + phi + 2
+   a <-  mu * (rho - 1) / k
+   gwaring_raw_lpmf(y, a = a, rho = rho, k = k)
+}
+
+```
+
+```{r}
+mu <- 50; phi <- c(1,5,10); 
+tau_border <- 0.5 * (sqrt((4*mu * (phi + 1) + phi^ 2) / phi ^ 2) - 1)
+for(b in tau_border) {
+  print(2 *(inv_logit(c(0.0001,1,100,1e12)) - 0.5) * b)
+}
+
+main_data <- tibble(mu = 50) %>% 
+  crossing(tibble(y = seq(from = 0, to = 1000, by = 1))) %>% 
+  crossing(tibble(phi = c(1, 5, 10)))%>% 
+  crossing(tibble(tau = c(0.0001, 1, 100, 1e12))) %>% 
+  mutate(
+    ld = gwaring3_lpmf(y, mu = mu, tau , phi))
+
+nb_data <- main_data %>% filter(y %% 100 == 0) %>%
+  mutate(
+         nb_dens = dnbinom(y, mu = mu, size = phi, log = TRUE)
+         )
+
+main_data %>%
+  ggplot(aes(x = y, y = ld, color = as.factor(phi), group = phi)) + 
+      geom_point(data = nb_data, aes(y = nb_dens, shape = as.factor(phi))) +
+      geom_line() + 
+      facet_wrap(~tau, ncol = 2, labeller = "label_both", scales = "free_y")
+```
+
+
+
+
+```{r}
+base_data <- tibble(mu = c(5, 50, 500, 50000)) 
+
+nb_data <- base_data %>%
+  crossing(tibble(phi = c(1.1,5))) %>%
+  #crossing(tibble(k = c(1, 100, 1000))) %>%
+  crossing(tibble(q = seq(1e-1, 1- 1e-5, length.out = 200))) %>%
+  group_by(mu) %>%
+  mutate(x = qnbinom(q, mu = mu, size = min(phi))) %>%
+  ungroup() %>%
+  mutate(d_nb = dnbinom(x, mu = mu, size = phi, log = TRUE))
+
+nb_data %>% 
+  crossing(tibble(tau = exp(seq(-3,3)))) %>%
+  mutate(d = gwaring3_lpmf(x, mu = mu , tau_prime = tau, phi = phi), g = factor(tau)) %>%
+  ggplot(aes(x = x, y = d, color = tau )) + geom_line(aes(group = g)) + 
+  geom_line(data = nb_data, aes(y = d_nb), color = "red") +
+  facet_wrap(phi~mu, scales = "free", labeller = label_both, ncol = 4)
+  
+# base_data %>%
+#   crossing(tibble(phi_log = seq(-1, 10, length.out = 30))) %>%
+#   mutate(
+#     phi = exp(phi_log),
+#     q2.5 = qnbinom(0.025, mu = mu, size = phi)) %>%
+#   ggplot(aes(x = phi, y = q2.5 / mu, color = factor(mu))) + geom_point() + scale_x_log10()
+
+```
 
 
 ##  Matching the mean and variance of the underlying beta prime distribution
@@ -158,24 +478,7 @@ main_data %>%
 ```
 
 ```{r}
-rgwaring2 <- function(n, mu, phi, tau) {
-   k <-  (tau + 1)*phi
-   rho <-  (phi + 1) / tau + phi + 2
-   a <-  mu * (rho - 1) / k
 
-   v_logit <- rbeta(n, k, rho)
-   
-   v <-  v_logit / (1 - v_logit)
-   neg_bin_mu = a * v
-   rnbinom(n, mu = neg_bin_mu, size = a)
-}
-
-gwaring2_lpmf <- function(y, mu, phi, tau) {
-   k <-  (tau + 1)*phi
-   rho <-  (phi + 1) / tau + phi + 2
-   a <-  mu * (rho - 1) / k
-   gwaring_lpmf(y, mu, rho, k)
-}
 
 mu <- 100
 phi <- 8
@@ -203,15 +506,54 @@ generator <- function(N) {
     tau <- abs(rnorm(1, 0, 5))
     
     list( true = list(mu = mu, phi = phi, tau = tau), 
-          observed = list(N = N, y = rgwaring2(N, mu, phi, tau)))
+          observed = list(N = N, y = rgwaring_stefano2(N, mu, phi, tau)))
   }
 }
 
-sbc_res <- sbc(test_model, generator(100), N_steps = 100)
+set.seed(6988225)
+cache_dir <- here("local_temp_data","sbc_waring")
+if(!dir.exists(cache_dir)) {
+  dir.create(cache_dir, recursive = TRUE)
+}
+sbc_res <- sbc(test_model, generator(100), N_steps = 100, cache_dir = cache_dir)
 
 ```
 
 
 ```{r}
-plot_sbc_params(sbc_res$params)
+summarise_sbc_diagnostics(sbc_res)
+sbc_res$diagnostics
+
+plot_sbc_params(sbc_res$params, binwidth = 10)
+
+sbc_res$params %>% filter(param_name == "mu") %>% 
+  inner_join(sbc_res$diagnostics, by = c("run" = "run")) %>%
+  mutate(max_rhat = pmin(max_rhat, 2)) %>%
+  ggplot(aes(x = true_value, y = n_divergent)) + geom_point() 
 ```
+
+
+```{r}
+run <- 7
+fit <- 1:4 %>% purrr::map( ~ readRDS(here("local_temp_data","sbc_waring",sprintf("%06d.rds",(run - 1) * 4 + .x)))$fit) %>% sflist2stanfit
+launch_shinystan_nonblocking(fit)
+
+sbc_res$true_values[[run]]
+hist(sbc_res$data[[run]]$y)
+```
+
+```{r}
+fit %>% rstan::extract() %>% as_tibble() %>% as_tibble() %>%
+  mutate(q = (tau + 1) / phi) %>%
+  ggplot(aes(x = log(q), y = log(phi))) + geom_point()
+
+```
+
+
+```{r}
+sbc_res$params %>% 
+  filter(param_name == "mu") %>%
+  inner_join(sbc_res$params %>% filter(param_name == "tau"), by = c("run" = "run"), suffix = c(".mu",".tau")) %>%
+ggplot(aes(x = median.mu, y = median.tau)) + geom_point(alpha = 0.1)
+```
+

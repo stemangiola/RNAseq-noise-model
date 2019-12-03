@@ -1,5 +1,8 @@
 functions {
-  real waring2_lpmf(int[] y, real mu, real phi, real tau) {
+  real waring2_lpmf(int[] y, real mu, real phi, real r) {
+      real s_border = 0.5 * (sqrt(4*mu + 4 * mu * phi + phi^2) / mu - phi / mu);
+      real tau = (s_border + r) * mu / phi;
+
       real k = (tau + 1)*phi;
       real rho = (phi + 1) / tau + phi + 2;
       real a = mu .* (rho - 1) ./ k;
@@ -22,9 +25,9 @@ data {
 }
 
 parameters {
-  real mu;
+  real<lower=0> mu;
   real<lower=0> phi_raw;
-  real<lower=0> tau;
+  real<lower=0> r;
 }
 
 transformed parameters {
@@ -32,10 +35,10 @@ transformed parameters {
 }
 
 model {
-  y ~ waring2(mu, phi, tau);
+  y ~ waring2(mu, phi, r);
 
   mu ~ lognormal(3, 1);
   phi_raw ~ normal(0, 1);
-  tau ~ normal(0, 5);
+  r ~ normal(0, 5);
 }
 
