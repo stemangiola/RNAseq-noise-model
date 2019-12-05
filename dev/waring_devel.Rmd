@@ -25,6 +25,14 @@ gwaring_raw_lpmf <- function(y, a, k, rho) {
   lgamma(a + rho) + lgamma(k + rho) - lgamma(rho) - lgamma(a + k + rho) + lgamma(a + y) - lgamma(a) + lgamma(k + y) - lgamma(k) - lgamma(a + k + rho + y) + lgamma(a + k + rho) - lgamma(y + 1)
 }
 
+rgwaring_raw <- function(n, a, k, rho) {
+   v_logit <- rbeta(n, k, rho)
+   
+   v <-  v_logit / (1 - v_logit)
+   neg_bin_mu = a * v
+   rnbinom(n, mu = neg_bin_mu, size = a)
+}
+
 
 gwaring_lpmf <- function(y, mu, k, rho) {
   a <- mu * (rho - 1) / k
@@ -76,11 +84,7 @@ rgwaring2 <- function(n, mu, phi, tau) {
    rho <-  (phi + 1) / tau + phi + 2
    a <-  mu * (rho - 1) / k
 
-   v_logit <- rbeta(n, k, rho)
-   
-   v <-  v_logit / (1 - v_logit)
-   neg_bin_mu = a * v
-   rnbinom(n, mu = neg_bin_mu, size = a)
+   rgwaring_raw(n = n, a =a, k = k, rho = rho)
 }
 
 gwaring2_lpmf <- function(y, mu, phi, tau) {
@@ -153,7 +157,6 @@ nb_data %>%
 
 ```{r}
 gwaring_stefano_lpmf <- function(y, mu, phi, s) {
-
   #tau = t * mu + ( mu / (phi * 1) )
   tau = s * mu / phi
 
@@ -163,13 +166,32 @@ gwaring_stefano_lpmf <- function(y, mu, phi, s) {
 
 }
 
+log1m_exp <- function(a) {
+  ifelse(a > -0.693147,  log(-expm1(a)), log1p(-exp(a)))
+}
+
+log_diff_exp <- function(x,y) {
+  x + log1m_exp(y - x)
+}
+
 gwaring_stefano2_lpmf <- function(y, mu, phi, r) {
   #phi2 <- (phi + phi^2 + mu * phi * t) / (mu * t + phi * t + mu * t^2)
   #t2 <-  -(-1 -phi +phi2* t)/(mu*t)
   #print(phi2)
   #print(t2)
+  
   s_border <- 0.5 * (sqrt(4*mu + 4 * mu * phi + phi^2) / mu - phi / mu)
-  gwaring_stefano_lpmf(y, mu, phi, r + s_border)
+  #print(unique(log(s_border)))
+  s <- r + s_border
+  
+  # log_s_border <- log(0.5) + log_diff_exp(0.5 * logsumexp(c(log(4) + log(mu), log(4) + log(mu) + log(phi), 2 * log(phi))) - log(mu), log(phi) - log(mu))
+  # print(unique(log_s_border))
+  #log_s <- log(s_border) + log1m_exp(1/r)
+  #print(unique(log_s))
+  #s <- exp(log_s) 
+  #s <- s_border * (1 - exp(-r))
+  
+  gwaring_stefano_lpmf(y, mu, phi, s)
 }
   
 rgwaring_stefano2 <- function(n, mu, phi, r) {
@@ -178,18 +200,43 @@ rgwaring_stefano2 <- function(n, mu, phi, r) {
   rgwaring2(n, mu, phi, tau)
 }
 
-# mu <- c(500); 
-# phi <- c(0.1,0.5,1,5); 
-mu <- c(5,50,500,5000); 
-phi <- c(5); 
-r <- seq(0.01,2, length.out = 8)
+gwaring_stefano3_lpmf <- function(y, mu, phi, r) {
+  s_border <- sqrt((1 + phi) / (mu + phi))
+  s <- 1/r + s_border
+
+  a = phi + (1 + phi)/s
+  k = phi + (mu + phi) * s
+  rho = 2 + phi * (1 + s) * (1 + k) / (mu * s)
+  
+  gwaring_raw_lpmf(y, a = a, k = k, rho = rho)
+}
+
+rgwaring_stefano3 <- function(n, mu, phi, r) {
+  s_border <- sqrt((1 + phi) / (mu + phi))
+  s <- 1/r + s_border
+
+  a = phi + (1 + phi)/s
+  k = phi + (mu + phi) * s
+  rho = 2 + phi * (1 + s) * (1 + k) / (mu * s)
+  
+  rgwaring_raw(n = n, a = a, k = k, rho = rho)
+}
 
 
+mu <- c(500); 
+phi <- c(0.1,0.5,1,5); 
+# mu <- c(5,50,500,5000); 
+# phi <- c(50); 
+#r <- seq(0.01,2, length.out = 4)
+r <- exp(seq(-3,2, length.out = 4))
+
+low_quantile <- 0.01
+hihg_quantile <- 0.99
 
 base <- tibble(mu = mu) %>%
   crossing(tibble(phi = phi))%>% 
-  mutate(low_bound = qnbinom(0.025, mu = mu, size = phi),
-         high_bound = qnbinom(0.975, mu = mu, size = phi)
+  mutate(low_bound = qnbinom(low_quantile, mu = mu, size = (phi/max(r + 1))),
+         high_bound = qnbinom(hihg_quantile, mu = mu, size = (phi/max(r + 1)))
          ) %>%
   crossing(tibble(y_step = seq(0,1, length.out = 100))) %>% 
   mutate(y = round(low_bound + (high_bound - low_bound) * y_step))
@@ -199,7 +246,8 @@ base <- tibble(mu = mu) %>%
 main_data <- base %>% 
   crossing(tibble(r = r)) %>% 
   mutate(
-    ld = gwaring_stefano2_lpmf(y, mu = mu, phi = phi, r = r))
+    ld = gwaring_stefano3_lpmf(y, mu = mu, phi = phi, r = r),
+    ld_matched = dnbinom(y, mu = mu, size = phi, log = TRUE))
 
 nb_data <- base %>% mutate(
          nb_dens = dnbinom(y, mu = mu, size = phi, log = TRUE)
@@ -207,9 +255,11 @@ nb_data <- base %>% mutate(
 
 main_data %>%
   ggplot(aes(x = y, y = ld, color = r, group = r)) + 
-      geom_line(data = nb_data, aes(x = y, y = nb_dens), inherit.aes = FALSE, color = "red") +
+      #geom_line(data = nb_data, aes(x = y, y = nb_dens), inherit.aes = FALSE, color = "red", size = 2, linetype = "dashed") +
+      geom_line(aes(y = ld_matched), size = 2, linetype = "dashed") +
       geom_line() + 
-      facet_wrap(mu~phi, ncol = 2, labeller = "label_both", scales = "free")
+      facet_wrap(mu~phi, ncol = 2, labeller = "label_both", scales = "free") +
+      scale_color_distiller(palette = "Spectral", trans = "log10")
 
 ```
 
@@ -219,7 +269,8 @@ pair_data <- tibble(mu = c(5, 50, 500, 5000)) %>%
   crossing(s = exp(seq(log(0.1), log(5), length.out = 100))) %>%
   mutate(phi2 = (phi + phi^2 + mu * phi * s) / (mu * s + phi * s + mu * s^2),
          s2 = -(-1 -phi +phi2* s)/(mu*s), 
-         s_border = 0.5 * (sqrt(4*mu + 4 * mu * phi + phi^2) / mu - phi / mu)) 
+         s_border = 0.5 * (sqrt(4*mu + 4 * mu * phi + phi^2) / mu - phi / mu),
+         s_border2 = sqrt((1 + phi) / (mu + phi)))
   
 # pair_data  %>%
 #   ggplot(aes(x = phi, y = s, fill = s2)) + geom_raster() + scale_x_log10() + scale_y_log10() + facet_wrap(~mu)
@@ -228,12 +279,98 @@ pair_data <- tibble(mu = c(5, 50, 500, 5000)) %>%
 #   ggplot(aes(x = phi, y = s, fill = phi2)) + geom_raster() + scale_x_log10() + scale_y_log10() + facet_wrap(~mu)
 
 pair_data  %>%
-  ggplot(aes(x = phi, y = s, fill = s_border)) + geom_raster() + scale_x_log10() + scale_y_log10() + facet_wrap(~mu) + scale_fill_continuous(trans = "log10")
+  ggplot(aes(x = phi, y = s, fill = s_border2)) + geom_raster() + scale_x_log10() + scale_y_log10() + facet_wrap(~mu) + scale_fill_continuous(trans = "log10")
 
 
 ```
 
+# Mu, phi (variance), r
 
+```{r}
+gwaring4_lpmf <- function(y, mu, phi, r) {
+  rho_low <-  2 + phi + (phi * (1 + 2 * phi + 2 * sqrt((1 + phi) * (mu + phi)))) / mu  
+  rho <- rho_low + 1 / r
+  
+  kFirst <-  -phi + mu*(-2-phi+rho)
+  kSecond <- sqrt(phi^2 + mu^2 * (2 + phi - rho)^2 - 2 * mu * phi * (-2 -3 * phi + rho + 2 * phi * rho))
+  k <- (kFirst + kSecond) / (2 * phi)  
+  a = mu * (rho - 1) / k
+  
+  gwaring_raw_lpmf(y, a = a, k = k, rho = rho)
+}
+
+rgwaring4 <- function(n, mu, phi, r) {
+  rho_low <-  2 + phi + (phi * (1 + 2 * phi + 2 * sqrt((1 + phi) * (mu + phi)))) / mu  
+  rho <- rho_low + 1 / r
+  
+  kFirst <-  -phi + mu*(-2-phi+rho)
+  kSecond <- sqrt(phi^2 + mu^2 * (2 + phi - rho)^2 - 2 * mu * phi * (-2 -3 * phi + rho + 2 * phi * rho))
+  k <- (kFirst - kSecond) / (2 * phi)  
+  a = mu * (rho - 1) / k
+  
+  rgwaring_raw(n, a = a, k = k, rho = rho)
+}
+
+
+
+# mu <- c(500); 
+# phi <- c(0.1,0.5,1,5); 
+# mu <- c(5,50,500,5000); 
+# phi <- c(1); 
+mu <- c(5,50,500); 
+phi <- c(0.5, 1, 5); 
+
+#r <- seq(0.01,2, length.out = 4)
+r <- exp(seq(-3,4, length.out = 4))
+#r <- 1e8
+
+low_quantile <- 0.5
+hihg_quantile <- 0.999999
+
+base <- tibble(mu = mu) %>%
+  crossing(tibble(phi = phi))%>% 
+  mutate(low_bound = qnbinom(low_quantile, mu = mu, size = phi),
+         high_bound = qnbinom(hihg_quantile, mu = mu, size = phi)
+         ) %>%
+  crossing(tibble(y_step = seq(0,1, length.out = 100))) %>% 
+  mutate(y = round(low_bound + (high_bound - low_bound) * y_step))
+
+
+
+main_data <- base %>% 
+  crossing(tibble(r = r)) %>% 
+  mutate(
+    ld = gwaring4_lpmf(y, mu = mu, phi = phi, r = r),
+    ld_matched = dnbinom(y, mu = mu, size = phi, log = TRUE))
+
+nb_data <- base %>% mutate(
+         nb_dens = dnbinom(y, mu = mu, size = phi, log = TRUE)
+         )
+
+main_data %>%
+  ggplot(aes(x = y, y = ld, color = r, group = r)) +
+      geom_line(data = nb_data, aes(x = y, y = nb_dens), inherit.aes = FALSE, color = "red", size = 2, linetype = "dashed") +
+      #geom_line(aes(y = ld_matched), size = 2, linetype = "dashed") +
+      geom_line() +
+      facet_wrap(mu~phi, ncol = 3, labeller = "label_both", scales = "free") +
+      theme(strip.text = element_text(size = 7), axis.text = element_text(size = 7))
+  #+
+      #scale_color_distiller(palette = "Spectral", trans = "log10")
+
+```
+
+
+```{r}
+tibble(mu = seq(-1,10, length.out = 100) %>% exp()) %>%
+  crossing(phi = seq(-3,5, length.out = 100) %>% exp()) %>%
+  mutate(rho_low = phi + (phi * (1 + 2 * phi + 2 * sqrt((1 + phi) * (mu + phi)))) / mu) %>%
+  ggplot(aes(x = mu, y = phi, fill = rho_low)) + geom_raster() + scale_x_log10() + scale_y_log10() + scale_fill_distiller(trans = "log10", palette = "Spectral") + expand_limits(fill = 1)
+```
+
+
+```{r}
+
+```
 
 
 ```{r}
@@ -270,14 +407,15 @@ test_model <- stan_model(here("stan", "waring_simple_test.stan"))
 ```
 
 ```{r}
-generator <- function(N) {
+generator <- function(N, r_sd = 5) {
   function() {
     mu <- rlnorm(1, 3, 1)
     phi <- 1/sqrt(abs(rnorm(1, 0, 1)))
-    r <- abs(rnorm(1, 0, 5))
+    r <- abs(rnorm(1, 0, r_sd))
+    #r <- rlnorm(1, 1, r_sd)
     
     list( true = list(mu = mu, phi = phi, r = r), 
-          observed = list(N = N, y = rgwaring_stefano2(N, mu, phi, r)))
+          observed = list(N = N, y = rgwaring4(N, mu, phi, r), r_sd = r_sd))
   }
 }
 
@@ -286,8 +424,9 @@ cache_dir <- here("local_temp_data","sbc_waring")
 if(!dir.exists(cache_dir)) {
   dir.create(cache_dir, recursive = TRUE)
 }
-sbc_res <- sbc(test_model, generator(100), N_steps = 100, cache_dir = cache_dir)
+sbc_res <- sbc(test_model, generator(100, r_sd = 5), N_steps = 30, cache_dir = cache_dir)
 
+#sampling(test_model, generator(100, r_sd = 10)()$observed)
 ```
 
 
@@ -305,8 +444,13 @@ sbc_res$params %>% filter(param_name == "mu") %>%
 
 
 ```{r}
-run <- 7
-fit <- 1:4 %>% purrr::map( ~ readRDS(here("local_temp_data","sbc_waring",sprintf("%06d.rds",(run - 1) * 4 + .x)))$fit) %>% sflist2stanfit
+load_sbc_fit <- function(run) {
+  fit <- 1:4 %>% purrr::map( ~ readRDS(here("local_temp_data","sbc_waring",sprintf("%06d.rds",(run - 1) * 4 + .x)))$fit) %>% sflist2stanfit
+  fit
+}
+
+run <- 3
+fit <- load_sbc_fit(run)
 launch_shinystan_nonblocking(fit)
 
 sbc_res$true_values[[run]]
@@ -314,16 +458,56 @@ hist(sbc_res$data[[run]]$y)
 ```
 
 ```{r}
-#fit
-fit %>% rstan::extract() %>% as_tibble() %>% as_tibble() %>%
-  mutate(q = (tau + 1) / phi, 
-         s_b = 0.5 * (sqrt(4*mu + 4 * mu * phi + phi^2) / mu - phi / mu),
-         s_raw = tau + s_b,
-         phibar =(phi + phi^2 + mu * phi * s_raw) / (mu *s_raw + phi * s_raw + mu * s_raw^2),
-         sbar = -(-1 -phi +phibar* s_raw)/(mu*s_raw)
-         ) %>%
-  ggplot(aes(x = log(s_b), y = log(phi))) + geom_point()
+run <- 3
+fit <- load_sbc_fit(run)
+fit %>% rstan::extract() %>% as_tibble() %>% 
+  # mutate(q = (r + 1) / phi, 
+  #        s_b = 0.5 * (sqrt(4*mu + 4 * mu * phi + phi^2) / mu - phi / mu),
+  #        s = r + s_b,
+  #        phibar =(phi + phi^2 + mu * phi * s) / (mu *s + phi * s + mu * s^2),
+  #        sbar = -(-1 -phi +phibar* s)/(mu*s)
+  #        ) %>%
+    mutate(
+    rho_low =  2 + phi + (phi * (1 + 2 * phi + 2 * sqrt((1 + phi) * (mu + phi)))) / mu  ,
+    rho = rho_low + 1 / r,
 
+    kFirst =  -phi + mu*(-2-phi+rho),
+    kSecond = sqrt(phi^2 + mu^2 * (2 + phi - rho)^2 - 2 * mu * phi * (-2 -3 * phi + rho + 2 * phi * rho)),
+    k = (kFirst + kSecond) / (2 * phi),
+    a = mu * (rho - 1) / k
+  ) %>%
+  ggplot(aes(x = log(phi), y = log(r))) + geom_point()
+
+```
+
+IDEA: find limit for y after which it makes sense to apprixmate with c - log(y) * (1 + rho)
+
+```{r}
+run_values <- sbc_res$data[[run]]$y
+fit %>% rstan::extract() %>% as_tibble() %>% 
+  mutate(
+    rho_low =  2 + phi + (phi * (1 + 2 * phi + 2 * sqrt((1 + phi) * (mu + phi)))) / mu  ,
+    rho = rho_low + 1 / r,
+
+    kFirst =  -phi + mu*(-2-phi+rho),
+    kSecond = sqrt(phi^2 + mu^2 * (2 + phi - rho)^2 - 2 * mu * phi * (-2 -3 * phi + rho + 2 * phi * rho)),
+    k = (kFirst + kSecond) / (2 * phi),
+    a = mu * (rho - 1) / k
+  ) %>%
+  rowwise() %>%
+  mutate(    nb_dens = sum(dnbinom(run_values, mu = mu, size = phi, log = TRUE)),
+    gwaring_dens = sum(gwaring_raw_lpmf(run_values, a = a, k = k, rho = rho))
+  ) %>% ungroup() %>%
+  mutate(rel_error = abs((gwaring_dens - nb_dens)/gwaring_dens)) %>%
+  ggplot(aes(x = log(phi), y = log10(rho), color = log10(rel_error))) + geom_point() 
+#+ #scale_color_continuous(trans = "log10")
+
+```
+
+
+```{r}
+hist(log(abs(rnorm(1e5,0,5))))
+mean(log(abs(rnorm(1e5,0,5))) < 2.5)
 ```
 
 

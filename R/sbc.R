@@ -1,4 +1,4 @@
-sbc <- function(model, generator, N_steps, ...) {
+sbc <- function(model, generator, N_steps, iter = 2000, ...) {
   true_list <- list()
   observed_list <- list()
   for(i in 1:N_steps) {
@@ -7,7 +7,7 @@ sbc <- function(model, generator, N_steps, ...) {
     observed_list[[i]] <- data$observed
   }
 
-  fits <- sampling_multi(model, observed_list, ...)
+  fits <- sampling_multi(model, observed_list, iter = iter,...)
 
   param_stats <-
     fits %>% imap_dfr(function(fit, data_id) {
@@ -21,6 +21,8 @@ sbc <- function(model, generator, N_steps, ...) {
                  n_divergent = rstan::get_num_divergent(fit),
                  n_treedepth = rstan::get_num_max_treedepth(fit),
                  n_chains_low_bfmi = length(rstan::get_low_bfmi_chains(fit)),
+                 max_rhat = max(rstan::summary(fit)$summary[,"Rhat"]),
+                 min_rel_neff = min(rstan::summary(fit)$summary[,"n_eff"]) / iter,
                  total_time = sum(rstan::get_elapsed_time(fit))
                  )
     })
@@ -71,7 +73,9 @@ summarise_sbc_diagnostics <- function(sbc_results) {
       has_divergence = mean(n_divergent > 0),
       has_treedepth = mean(n_treedepth > 0),
       has_low_bfmi = mean(n_chains_low_bfmi > 0),
-      median_total_time = median(total_time)
+      median_total_time = median(total_time),
+      has_high_rhat = mean(max_rhat > 1.01),
+      has_low_neff = mean(min_rel_neff < 0.04)
       )
 
 }
