@@ -11,7 +11,7 @@ sbc <- function(model, generator, N_steps, iter = 2000, ...) {
 
   param_stats <-
     fits %>% imap_dfr(function(fit, data_id) {
-      samples <- rstan::extract(fit, pars = names(true_list[[data_id]]))
+      samples <- rstan::extract(fit) #rstan::extract(fit, pars = names(true_list[[data_id]]))
       eval <- evaluate_all_params(samples, true_list[[data_id]])
       eval %>% mutate(run = data_id)
     })

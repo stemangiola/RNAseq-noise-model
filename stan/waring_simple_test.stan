@@ -37,10 +37,10 @@ functions {
 
   real gwaring4_lpmf(int[] y, real mu, real phi, real r) {
     real rho_low =  2 + phi + (phi * (1 + 2 * phi + 2 * sqrt((1 + phi) * (mu + phi)))) / mu;
-    real rho = rho_low + (1 / r);
+    real rho = rho_low * ( 1 + 1 / r ^ 2);
 
     if(rho > 1e06) {
-       return neg_binomial_lpmf(y | mu, phi);
+      return neg_binomial_lpmf(y | mu, phi);
     } else {
       real kFirst = -phi + mu*(-2-phi+rho);
       real kSecond = sqrt(phi^2 + mu^2 * (2 + phi - rho)^2 - 2 * mu * phi * (-2 -3 * phi + rho + 2 * phi * rho));
@@ -55,13 +55,15 @@ functions {
 data {
   int<lower=0> N;
   int y[N];
+  int<lower=0, upper=1> r_known;
   real r_sd;
+  vector<lower=0>[r_known] r_true;
 }
 
 parameters {
   real<lower=0> mu;
   real<lower=0> phi_raw;
-  real<lower=0> r;
+  vector<lower=0>[r_known ? 0 : 1] r;
 }
 
 transformed parameters {
@@ -69,11 +71,38 @@ transformed parameters {
 }
 
 model {
-  y ~ gwaring4(mu, phi, r);
+  if(r_known) {
+    y ~ gwaring2(mu, phi, r_true[1]);
+  } else {
+    y ~ gwaring2(mu, phi, r[1]);
+  }
 
   mu ~ lognormal(3, 1);
   phi_raw ~ normal(0, 1);
-  r ~ normal(0, r_sd);
-  //r ~ lognormal(1, r_sd);
+  //r ~ normal(0, r_sd);
+  r ~ lognormal(1, r_sd);
+}
+
+generated quantities {
+    real rho_low;
+    real rho;
+    real k;
+    real a;
+
+    {
+      real r_;
+      if(r_known) r_ = r_true[1];
+      else r_ = r[1];
+
+      rho_low =  2 + phi + (phi * (1 + 2 * phi + 2 * sqrt((1 + phi) * (mu + phi)))) / mu;
+      rho = rho_low + (1 / r_);
+
+      {
+        real kFirst = -phi + mu*(-2-phi+rho);
+        real kSecond = sqrt(phi^2 + mu^2 * (2 + phi - rho)^2 - 2 * mu * phi * (-2 -3 * phi + rho + 2 * phi * rho));
+        k = (kFirst + kSecond) / (2 * phi);
+        a = mu * (rho - 1) / k;
+      }
+    }
 }
 
